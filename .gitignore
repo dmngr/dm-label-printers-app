@@ -1,0 +1,25 @@
+# Compiled output
+/dist
+/out-tsc
+/tmp
+
+# Node
+/node_modules
+npm-debug.log
+yarn-error.log
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.suo
+*.user
+.history/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.angular/
+*.log

@@ -1,0 +1,69 @@
+/* Minimal admin-dashboard styles. Resets + typographic baseline + a few
+   shared utility classes. Component-specific styling lives inline in each
+   standalone component (Angular's per-component scoping). */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #F9FAFB;
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a { color: #2563EB; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.btn:hover { background: #F3F4F6; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: #2563EB;
+  color: white;
+  border-color: #2563EB;
+}
+.btn-primary:hover { background: #1D4ED8; }
+
+.input {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  background: white;
+}
+.input:focus { outline: 2px solid #2563EB; outline-offset: -2px; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-active { background: #D1FAE5; color: #065F46; }
+.badge-stale  { background: #FEE2E2; color: #991B1B; }
+.badge-warn   { background: #FEF3C7; color: #92400E; }
+.badge-mute   { background: #E5E7EB; color: #4B5563; }
+
+.muted { color: #6B7280; }
+.mono  { font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace; font-size: 12px; }

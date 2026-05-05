@@ -1,0 +1,35 @@
+{
+  "name": "dm-label-printers-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Customer-facing companion to the native DM Label Printer Windows app \u2014 remote operate and monitor your installed device.",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "build:prod": "ng build --configuration production",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "invalidate:cf:prod": "aws cloudfront create-invalidation --distribution-id E15UYTBZU09NW --paths \"/index.html\" --profile dm",
+    "deploy:prod": "npm run build:prod && aws s3 sync ./dist/dm-label-printers-app/browser s3://dm-label-printers-app --delete --cache-control \"public, max-age=0\" --profile dm && npm run invalidate:cf:prod"
+  },
+  "dependencies": {
+    "@angular/animations": "^18.0.0",
+    "@angular/common": "^18.0.0",
+    "@angular/compiler": "^18.0.0",
+    "@angular/core": "^18.0.0",
+    "@angular/forms": "^18.0.0",
+    "@angular/platform-browser": "^18.0.0",
+    "@angular/platform-browser-dynamic": "^18.0.0",
+    "@angular/router": "^18.0.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.14.3"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^18.0.0",
+    "@angular/cli": "^18.0.0",
+    "@angular/compiler-cli": "^18.0.0",
+    "typescript": "~5.4.0"
+  }
+}
