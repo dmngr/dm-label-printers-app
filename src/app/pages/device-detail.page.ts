@@ -6,6 +6,7 @@ import { catchError } from 'rxjs/operators';
 import {
   CatalogProductItem,
   CatalogTemplateItem,
+  CommandResponse,
   CustomerApiService,
   DeviceListItem,
   PrintJobItem,
@@ -82,11 +83,21 @@ type Tab = 'products' | 'templates' | 'jobs';
                       @if (p.categoryName) {
                         <span class="muted small">· {{ p.categoryName }}</span>
                       }
+                      @if (printToast()?.productCode === p.code) {
+                        <span class="toast-inline small">{{ printToast()!.message }}</span>
+                      }
                     </div>
                   </div>
                   @if (p.priceCents != null) {
                     <div class="row-price">{{ formatPrice(p.priceCents) }}</div>
                   }
+                  <button
+                    class="btn-print"
+                    (click)="print(p)"
+                    [disabled]="printing() === p.code"
+                  >
+                    {{ printing() === p.code ? 'Sending…' : 'Print' }}
+                  </button>
                 </div>
               }
             </div>
@@ -203,7 +214,15 @@ type Tab = 'products' | 'templates' | 'jobs';
       .row-main { flex: 1; min-width: 0; }
       .row-title { font-weight: 500; display: flex; align-items: center; gap: 8px; }
       .row-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; font-size: 12px; }
-      .row-price { font-weight: 600; color: #1F2937; }
+      .row-price { font-weight: 600; color: #1F2937; margin-right: 12px; }
+      .btn-print {
+        background: #4F46E5; color: white; border: 0;
+        padding: 6px 14px; border-radius: 6px; font-size: 12px;
+        font-weight: 500; cursor: pointer;
+      }
+      .btn-print:hover:not(:disabled) { background: #4338CA; }
+      .btn-print:disabled { opacity: 0.5; cursor: not-allowed; }
+      .toast-inline { color: #14532D; font-weight: 500; }
       .error {
         color: #991B1B; background: #FEE2E2;
         padding: 10px 14px; border-radius: 8px; margin-bottom: 12px;
@@ -224,6 +243,37 @@ export class DeviceDetailPage implements OnInit {
   readonly loading = signal(true);
   readonly errorMessage = signal<string | null>(null);
   readonly activeTab = signal<Tab>('products');
+  readonly printing = signal<string | null>(null);
+  readonly printToast = signal<{ productCode: string; message: string } | null>(null);
+
+  print(p: CatalogProductItem): void {
+    const d = this.device();
+    if (!d || this.printing()) return;
+    this.printing.set(p.code);
+    this.printToast.set(null);
+    this.api.printLabel(d.deviceCode, p.code, 1).subscribe({
+      next: (cmd: CommandResponse) => {
+        this.printing.set(null);
+        this.printToast.set({
+          productCode: p.code,
+          message: `Queued (cmd #${cmd.id})`,
+        });
+        setTimeout(() => {
+          if (this.printToast()?.productCode === p.code) this.printToast.set(null);
+        }, 4000);
+      },
+      error: (err: { status?: number; error?: unknown }) => {
+        this.printing.set(null);
+        this.printToast.set({
+          productCode: p.code,
+          message: err?.status === 400 ? 'Rejected by server' : 'Send failed',
+        });
+        setTimeout(() => {
+          if (this.printToast()?.productCode === p.code) this.printToast.set(null);
+        }, 4000);
+      },
+    });
+  }
 
   ngOnInit(): void {
     const code = this.route.snapshot.paramMap.get('deviceCode') ?? '';

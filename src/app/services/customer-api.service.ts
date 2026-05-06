@@ -116,4 +116,40 @@ export class CustomerApiService {
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/jobs?limit=${limit}`,
     );
   }
+
+  printLabel(
+    deviceCode: string,
+    productCode: string,
+    quantity = 1,
+  ): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`,
+      { commandType: 'print-label', productCode, quantity },
+    );
+  }
+
+  getCommand(deviceCode: string, id: number): Observable<CommandDetail> {
+    return this.http.get<CommandDetail>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands/${id}`,
+    );
+  }
+}
+
+export interface CommandResponse {
+  id: number;
+  status: string;
+  requestedAtUtc: string;
+  commandType: string;
+  productCode?: string;
+}
+
+export interface CommandDetail {
+  id: number;
+  status: string;
+  commandType: string;
+  requestedAtUtc: string;
+  claimedAtUtc: string | null;
+  completedAtUtc: string | null;
+  productCode?: string | null;
+  errorMessage?: string | null;
 }
