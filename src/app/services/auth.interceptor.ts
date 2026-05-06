@@ -6,12 +6,11 @@ import { tap } from 'rxjs';
 import { AuthService } from './auth.service';
 
 /**
- * Customer-API Function URL the interceptor scopes the bearer to. Empty in
- * Phase 0 (Lambda not yet shipped) — set this once the customer-api Lambda
- * Function URL is known. Scoping prevents the bearer leaking to third-party
- * hosts via accidentally-fired requests.
+ * Customer-API Function URL the interceptor scopes the bearer to. Live since
+ * Phase 0 step 6. Scoping prevents the bearer leaking to third-party hosts via
+ * accidentally-fired requests (e.g. a future analytics SDK).
  */
-const CUSTOMER_API_BASE = '';
+const CUSTOMER_API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.eu-west-1.on.aws';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
