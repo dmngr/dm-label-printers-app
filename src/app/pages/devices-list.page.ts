@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../services/auth.service';
 import { CustomerApiService, StoreWithDevices } from '../services/customer-api.service';
@@ -7,7 +7,7 @@ import { CustomerApiService, StoreWithDevices } from '../services/customer-api.s
 @Component({
   selector: 'app-devices-list',
   standalone: true,
-  imports: [],
+  imports: [RouterLink],
   template: `
     <div class="page">
       <header>
@@ -39,7 +39,7 @@ import { CustomerApiService, StoreWithDevices } from '../services/customer-api.s
 
           <div class="device-grid">
             @for (d of store.devices; track d.deviceCode) {
-              <div class="device-card">
+              <a class="device-card" [routerLink]="['/devices', d.deviceCode]">
                 <div class="device-title">
                   {{ d.deviceName || d.deviceCode }}
                   @if (d.isOnline) {
@@ -60,7 +60,7 @@ import { CustomerApiService, StoreWithDevices } from '../services/customer-api.s
                     <span class="badge badge-mute">{{ d.pendingCommands }} cmd</span>
                   }
                 </div>
-              </div>
+              </a>
             }
           </div>
         </section>
@@ -103,7 +103,12 @@ import { CustomerApiService, StoreWithDevices } from '../services/customer-api.s
         border: 1px solid #E5E7EB;
         border-radius: 8px;
         padding: 12px 14px;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        transition: border-color 0.15s, box-shadow 0.15s;
       }
+      .device-card:hover { border-color: #93C5FD; box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08); }
       .device-title { font-weight: 500; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
       .device-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; }
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

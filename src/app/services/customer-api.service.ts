@@ -34,6 +34,48 @@ export interface StoresResponse {
   stores: StoreSummary[];
 }
 
+export interface CatalogProductItem {
+  id: number;
+  code: string;
+  name: string;
+  categoryName?: string;
+  priceCents?: number;
+  isActive?: boolean;
+  updatedAtUtc?: string;
+}
+
+export interface CatalogProductsResponse {
+  items: CatalogProductItem[];
+}
+
+export interface CatalogTemplateItem {
+  id: number;
+  code: string;
+  name: string;
+  updatedAtUtc?: string;
+}
+
+export interface CatalogTemplatesResponse {
+  items: CatalogTemplateItem[];
+}
+
+export interface PrintJobItem {
+  id: number;
+  createdAtUtc: string;
+  completedAtUtc: string | null;
+  status: string;
+  productCode?: string | null;
+  templateCode?: string | null;
+  operator?: string | null;
+  errorMessage?: string | null;
+  labelCount?: number;
+}
+
+export interface PrintJobsResponse {
+  items: PrintJobItem[];
+  nextCursor: string | null;
+}
+
 /**
  * Calls the customer-api Lambda
  * (`label-printer-cloud-customer-api`, eu-west-1). Bearer is auto-attached by
@@ -54,6 +96,24 @@ export class CustomerApiService {
   getDevice(deviceCode: string): Observable<DeviceListItem & { storeId: string }> {
     return this.http.get<DeviceListItem & { storeId: string }>(
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}`,
+    );
+  }
+
+  listProducts(deviceCode: string): Observable<CatalogProductsResponse> {
+    return this.http.get<CatalogProductsResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/products`,
+    );
+  }
+
+  listTemplates(deviceCode: string): Observable<CatalogTemplatesResponse> {
+    return this.http.get<CatalogTemplatesResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/templates`,
+    );
+  }
+
+  listJobs(deviceCode: string, limit = 50): Observable<PrintJobsResponse> {
+    return this.http.get<PrintJobsResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/jobs?limit=${limit}`,
     );
   }
 }
