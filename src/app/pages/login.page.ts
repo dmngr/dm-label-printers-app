@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { AuthService } from '../services/auth.service';
+import { PairingService } from '../services/pairing.service';
 
 @Component({
   selector: 'app-login',
@@ -28,6 +29,7 @@ import { AuthService } from '../services/auth.service';
             required
             autocomplete="off"
             spellcheck="false"
+            [disabled]="busy()"
           />
         </label>
 
@@ -35,14 +37,8 @@ import { AuthService } from '../services/auth.service';
           <div class="error">{{ error() }}</div>
         }
 
-        <p class="phase-note">
-          Phase 0 — pairing exchange not yet wired. Submitting stores the code
-          locally as a placeholder bearer; the full claim flow ships with the
-          customer-api Lambda.
-        </p>
-
-        <button class="btn btn-primary" (click)="connect()" [disabled]="!canSubmit()">
-          Connect
+        <button class="btn btn-primary" (click)="connect()" [disabled]="!canSubmit() || busy()">
+          {{ busy() ? 'Pairing…' : 'Connect' }}
         </button>
       </div>
     </div>
@@ -77,6 +73,7 @@ import { AuthService } from '../services/auth.service';
         box-sizing: border-box;
       }
       .input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.5px; }
+      .input:disabled { background: #F9FAFB; }
       .error {
         color: #991B1B;
         background: #FEE2E2;
@@ -84,15 +81,6 @@ import { AuthService } from '../services/auth.service';
         border-radius: 6px;
         margin: 12px 0;
         font-size: 13px;
-      }
-      .phase-note {
-        color: #6B7280;
-        background: #F9FAFB;
-        border-left: 3px solid #D1D5DB;
-        padding: 8px 12px;
-        margin: 16px 0;
-        font-size: 12px;
-        line-height: 1.5;
       }
       .btn {
         background: #1F2937;
@@ -109,10 +97,12 @@ import { AuthService } from '../services/auth.service';
 })
 export class LoginPage {
   private readonly auth = inject(AuthService);
+  private readonly pairing = inject(PairingService);
   private readonly router = inject(Router);
 
   code = '';
   readonly error = signal<string | null>(null);
+  readonly busy = signal(false);
 
   canSubmit(): boolean {
     return this.code.trim().length > 0;
@@ -120,11 +110,20 @@ export class LoginPage {
 
   connect(): void {
     this.error.set(null);
-    if (!this.canSubmit()) return;
+    if (!this.canSubmit() || this.busy()) return;
 
-    // Phase 0 placeholder: store the code as the bearer. The real flow
-    // exchanges it with /api/v1/pairing/claim on the customer-pairing Lambda.
-    this.auth.setToken(this.code.trim());
-    this.router.navigate(['/devices']);
+    this.busy.set(true);
+    const existingBearer = this.auth.token();
+    this.pairing.claim(this.code.trim(), existingBearer).subscribe({
+      next: (response) => {
+        this.auth.setSession(response.bearer, response.stores);
+        this.busy.set(false);
+        this.router.navigate(['/devices']);
+      },
+      error: (err: { message?: string }) => {
+        this.error.set(err?.message ?? 'Pairing failed. Try again.');
+        this.busy.set(false);
+      },
+    });
   }
 }
