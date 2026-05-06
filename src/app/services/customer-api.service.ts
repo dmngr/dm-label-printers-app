@@ -128,6 +128,40 @@ export class CustomerApiService {
     );
   }
 
+  upsertProduct(
+    deviceCode: string,
+    product: { id?: number | null; code: string; name: string; categoryName?: string; priceCents?: number },
+  ): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`,
+      { commandType: 'upsert-product', product },
+    );
+  }
+
+  deleteProduct(deviceCode: string, productId: number): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`,
+      { commandType: 'delete-product', productId },
+    );
+  }
+
+  upsertTemplate(
+    deviceCode: string,
+    template: { id?: number | null; code: string; name: string; body?: string },
+  ): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`,
+      { commandType: 'upsert-template', template },
+    );
+  }
+
+  deleteTemplate(deviceCode: string, templateId: number): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(
+      `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`,
+      { commandType: 'delete-template', templateId },
+    );
+  }
+
   getCommand(deviceCode: string, id: number): Observable<CommandDetail> {
     return this.http.get<CommandDetail>(
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands/${id}`,
