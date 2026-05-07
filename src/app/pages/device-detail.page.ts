@@ -1,4 +1,5 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, of, switchMap } from 'rxjs';
@@ -72,7 +73,7 @@ interface TemplateDraft {
         </nav>
 
         @if (toast(); as t) {
-          <div class="toast" [class.toast-error]="t.kind === 'error'">{{ t.message }}</div>
+          <div class="toast" [class.toast-error]="t.kind === 'error'" [class.toast-info]="t.kind === 'info'">{{ t.message }}</div>
         }
 
         @if (loading()) {
@@ -242,6 +243,7 @@ interface TemplateDraft {
         border-radius: 8px; margin-bottom: 12px; font-size: 13px;
       }
       .toast-error { background: #FEE2E2; color: #991B1B; }
+      .toast-info { background: #DBEAFE; color: #1E3A8A; }
 
       .card { background: white; border: 1px solid #E5E7EB; border-radius: 10px; padding: 16px 20px; }
       .card.muted { color: #6B7280; text-align: center; padding: 32px; }
@@ -324,7 +326,8 @@ export class DeviceDetailPage implements OnInit {
   readonly errorMessage = signal<string | null>(null);
   readonly activeTab = signal<Tab>('products');
   readonly busy = signal(false);
-  readonly toast = signal<{ kind: 'success' | 'error'; message: string } | null>(null);
+  readonly toast = signal<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly productDraft = signal<ProductDraft | null>(null);
   readonly templateDraft = signal<TemplateDraft | null>(null);
@@ -396,6 +399,7 @@ export class DeviceDetailPage implements OnInit {
       return;
     }
     this.busy.set(true);
+    const label = draft.id ? 'Product update' : 'Product create';
     this.api.upsertProduct(d.deviceCode, {
       id: draft.id ?? undefined,
       code: draft.code.trim(),
@@ -406,7 +410,8 @@ export class DeviceDetailPage implements OnInit {
       next: (cmd) => {
         this.productDraft.set(null);
         this.busy.set(false);
-        this.flashToast('success', `Queued ${draft.id ? 'update' : 'create'} (cmd #${cmd.id}). Catalog refreshes once the device picks it up.`);
+        this.flashToast('info', `${label} queued (cmd #${cmd.id})`);
+        this.trackCommand(label, d.deviceCode, cmd.id, 'products');
       },
       error: (err: { status?: number }) => {
         this.busy.set(false);
@@ -423,7 +428,8 @@ export class DeviceDetailPage implements OnInit {
     this.api.deleteProduct(d.deviceCode, p.id).subscribe({
       next: (cmd) => {
         this.busy.set(false);
-        this.flashToast('success', `Queued delete (cmd #${cmd.id}).`);
+        this.flashToast('info', `Product delete queued (cmd #${cmd.id})`);
+        this.trackCommand('Product delete', d.deviceCode, cmd.id, 'products');
       },
       error: () => {
         this.busy.set(false);
@@ -449,6 +455,7 @@ export class DeviceDetailPage implements OnInit {
     const d = this.device();
     if (!d) return;
     this.busy.set(true);
+    const label = draft.id ? 'Template update' : 'Template create';
     this.api.upsertTemplate(d.deviceCode, {
       id: draft.id ?? undefined,
       code: draft.code.trim(),
@@ -458,7 +465,8 @@ export class DeviceDetailPage implements OnInit {
       next: (cmd) => {
         this.templateDraft.set(null);
         this.busy.set(false);
-        this.flashToast('success', `Queued ${draft.id ? 'update' : 'create'} (cmd #${cmd.id}).`);
+        this.flashToast('info', `${label} queued (cmd #${cmd.id})`);
+        this.trackCommand(label, d.deviceCode, cmd.id, 'templates');
       },
       error: (err: { status?: number }) => {
         this.busy.set(false);
@@ -475,7 +483,8 @@ export class DeviceDetailPage implements OnInit {
     this.api.deleteTemplate(d.deviceCode, t.id).subscribe({
       next: (cmd) => {
         this.busy.set(false);
-        this.flashToast('success', `Queued delete (cmd #${cmd.id}).`);
+        this.flashToast('info', `Template delete queued (cmd #${cmd.id})`);
+        this.trackCommand('Template delete', d.deviceCode, cmd.id, 'templates');
       },
       error: () => {
         this.busy.set(false);
@@ -492,7 +501,8 @@ export class DeviceDetailPage implements OnInit {
     this.api.printLabel(d.deviceCode, p.code, 1).subscribe({
       next: (cmd: CommandResponse) => {
         this.busy.set(false);
-        this.flashToast('success', `Print queued (cmd #${cmd.id}).`);
+        this.flashToast('info', `Print queued (cmd #${cmd.id})`);
+        this.trackCommand('Print', d.deviceCode, cmd.id, 'jobs');
       },
       error: (err: { status?: number }) => {
         this.busy.set(false);
@@ -502,12 +512,50 @@ export class DeviceDetailPage implements OnInit {
   }
 
   // Helpers
-  private flashToast(kind: 'success' | 'error', message: string): void {
+  private flashToast(kind: 'success' | 'error' | 'info', message: string): void {
     this.toast.set({ kind, message });
     setTimeout(() => {
       const current = this.toast();
       if (current?.message === message) this.toast.set(null);
     }, 5000);
+  }
+
+  /**
+   * Phase 4 live monitoring: poll the command's status every 2s and reflect
+   * each transition in the toast. On Completed, refresh the affected list
+   * so the user sees the catalog update immediately. On Failed, surface the
+   * device-side error message.
+   */
+  private trackCommand(label: string, deviceCode: string, cmdId: number, refresh: 'products' | 'templates' | 'jobs' | 'all' | 'none'): void {
+    this.api
+      .streamCommand(deviceCode, cmdId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (cmd) => {
+          const s = (cmd.status ?? '').toLowerCase();
+          if (s === 'completed') {
+            this.flashToast('success', `${label} completed (cmd #${cmd.id})`);
+            this.refreshAfterCommand(deviceCode, refresh);
+          } else if (s === 'failed') {
+            this.flashToast('error', `${label} failed: ${cmd.errorMessage ?? 'unknown error'}`);
+          } else {
+            this.flashToast('info', `${label}: ${cmd.status}`);
+          }
+        },
+      });
+  }
+
+  private refreshAfterCommand(deviceCode: string, scope: 'products' | 'templates' | 'jobs' | 'all' | 'none'): void {
+    if (scope === 'none') return;
+    if (scope === 'products' || scope === 'all') {
+      this.api.listProducts(deviceCode).pipe(catchError(() => of({ items: [] }))).subscribe((r) => this.products.set(r.items ?? []));
+    }
+    if (scope === 'templates' || scope === 'all') {
+      this.api.listTemplates(deviceCode).pipe(catchError(() => of({ items: [] }))).subscribe((r) => this.templates.set(r.items ?? []));
+    }
+    if (scope === 'jobs' || scope === 'all') {
+      this.api.listJobs(deviceCode, 50).pipe(catchError(() => of({ items: [], nextCursor: null }))).subscribe((r) => this.jobs.set(r.items ?? []));
+    }
   }
 
   formatPrice(cents: number): string {

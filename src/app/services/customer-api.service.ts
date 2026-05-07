@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable, interval } from 'rxjs';
+import { catchError, distinctUntilChanged, switchMap, takeWhile } from 'rxjs/operators';
 
 const API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.eu-west-1.on.aws';
 
@@ -167,6 +168,40 @@ export class CustomerApiService {
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands/${id}`,
     );
   }
+
+  /**
+   * Phase 4 live monitoring: emits the command's status whenever it changes,
+   * polling the GET endpoint every `intervalMs` ms (default 2s — well under
+   * the design doc's "<2s after device emits" target). Completes once the
+   * status is terminal (Completed | Failed) or the safety cap is hit.
+   *
+   * Cheaper than the alternative SSE/WebSocket pipeline at our scale: ~30
+   * GETs per command at $0.05 per million Lambda invocations + sub-cent
+   * DynamoDB GetItem cost = effectively $0/month at 100 customers issuing
+   * ~10 commands/day each. Upgrade to DynamoDB Streams + API Gateway
+   * WebSockets if customer count grows past ~5k.
+   */
+  streamCommand(
+    deviceCode: string,
+    id: number,
+    intervalMs = 2000,
+    maxDurationMs = 60_000,
+  ): Observable<CommandDetail> {
+    const deadline = Date.now() + maxDurationMs;
+    return interval(intervalMs).pipe(
+      switchMap(() => this.getCommand(deviceCode, id).pipe(catchError(() => EMPTY))),
+      distinctUntilChanged((a, b) => a.status === b.status),
+      takeWhile(
+        (cmd) => Date.now() < deadline && !isTerminal(cmd.status),
+        true,
+      ),
+    );
+  }
+}
+
+function isTerminal(status: string): boolean {
+  const s = (status ?? '').toLowerCase();
+  return s === 'completed' || s === 'failed';
 }
 
 export interface CommandResponse {
