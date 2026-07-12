@@ -4,16 +4,17 @@ Customer-facing companion to the native DM Label Printer Windows app. Pair your
 device, then operate and monitor it from any browser at
 **[https://app.label.ninja](https://app.label.ninja)**.
 
-**Status**: Phase 0 — infrastructure live, app shell deployed, pairing
-exchange not yet wired. Submitting any pairing code on the login page logs
-you in with that string as a placeholder bearer; the real claim flow ships
-with the `customer-api` Lambda. See
+**Status**: customer pairing and device views are live. The native app can open
+`/#/login?code=XXXX-XXXX` from a QR code; the login page validates and prefills
+the code, while the customer still selects Connect before the one-time claim.
+See
 [docs/app-label-ninja-design.md](https://github.com/dmngr/label-printers-panel/blob/main/docs/app-label-ninja-design.md)
 in the cloud repo for the full plan.
 
 ## Stack
 
-- Angular 18 (standalone components, signals)
+- Angular 21 (standalone components, signals)
+- Node.js 24.11.1 (pinned in `.nvmrc` and CI)
 - HttpClient with bearer interceptor + auth guard
 - Build: `ng build` → static SPA → S3 + CloudFront
 - Auth: per-customer pairing token in `localStorage` (one token per customer
@@ -38,10 +39,11 @@ Locked in `docs/app-label-ninja-design.md` (cloud repo). Highlights:
 ```bash
 npm install
 npm start              # ng serve on http://localhost:4200
+npm run check          # pairing tests + production build + production audit
 ```
 
-Login page asks for a pairing code; in Phase 0 mode any non-empty value is
-accepted as a placeholder bearer.
+Login accepts either manual `XXXX-XXXX` entry or a validated QR deep link:
+`https://app.label.ninja/#/login?code=XXXX-XXXX`.
 
 ## Deploy
 

@@ -1,7 +1,9 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { take } from 'rxjs';
 
+import { isValidPairingCode, normalizePairingCode } from '../pairing-code';
 import { AuthService } from '../services/auth.service';
 import { PairingService } from '../services/pairing.service';
 
@@ -12,11 +14,18 @@ import { PairingService } from '../services/pairing.service';
   template: `
     <div class="page">
       <div class="card">
-        <h1>DM Label Printer — Customer App</h1>
+        <h1>DM Label Printer - Customer App</h1>
         <p class="muted">
-          Open the native DM Label Printer app on your installed PC, generate a
-          pairing code, and enter it here to link this browser to your store.
+          Generate a pairing code in the native app, then scan its QR or enter
+          the code here to link this browser to your store.
         </p>
+
+        @if (loadedFromQr()) {
+          <div class="scan-notice" role="status">
+            <strong>QR code loaded.</strong>
+            Review the pairing code, then select Connect to approve this browser.
+          </div>
+        }
 
         <label>
           <span>Pairing code</span>
@@ -24,21 +33,28 @@ import { PairingService } from '../services/pairing.service';
             class="input mono"
             type="text"
             placeholder="ABCD-EF12"
-            [(ngModel)]="code"
+            [ngModel]="code"
+            (ngModelChange)="updateCode($event)"
+            (blur)="normalizeCode()"
             name="code"
             required
+            maxlength="9"
             autocomplete="off"
+            autocapitalize="characters"
             spellcheck="false"
+            aria-describedby="pairing-help"
             [disabled]="busy()"
           />
         </label>
 
+        <p id="pairing-help" class="hint">Format: XXXX-XXXX. Codes expire after 15 minutes.</p>
+
         @if (error()) {
-          <div class="error">{{ error() }}</div>
+          <div class="error" role="alert">{{ error() }}</div>
         }
 
         <button class="btn btn-primary" (click)="connect()" [disabled]="!canSubmit() || busy()">
-          {{ busy() ? 'Pairing…' : 'Connect' }}
+          {{ busy() ? 'Pairing...' : 'Connect' }}
         </button>
       </div>
     </div>
@@ -62,6 +78,17 @@ import { PairingService } from '../services/pairing.service';
       }
       h1 { font-size: 18px; margin: 0 0 8px; }
       .muted { color: #4B5563; font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+      .scan-notice {
+        color: #14532D;
+        background: #DCFCE7;
+        border: 1px solid #86EFAC;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin: 16px 0 4px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .scan-notice strong { display: block; margin-bottom: 2px; }
       label { display: block; margin: 16px 0; }
       label > span { display: block; font-weight: 500; margin-bottom: 6px; font-size: 13px; }
       .input {
@@ -74,6 +101,7 @@ import { PairingService } from '../services/pairing.service';
       }
       .input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.5px; }
       .input:disabled { background: #F9FAFB; }
+      .hint { color: #6B7280; font-size: 12px; margin: -10px 0 16px; }
       .error {
         color: #991B1B;
         background: #FEE2E2;
@@ -99,22 +127,52 @@ export class LoginPage {
   private readonly auth = inject(AuthService);
   private readonly pairing = inject(PairingService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   code = '';
   readonly error = signal<string | null>(null);
   readonly busy = signal(false);
+  readonly loadedFromQr = signal(false);
+
+  constructor() {
+    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
+      const linkedCode = normalizePairingCode(params.get('code'));
+      if (linkedCode) {
+        this.code = linkedCode;
+        this.loadedFromQr.set(true);
+      }
+    });
+  }
 
   canSubmit(): boolean {
-    return this.code.trim().length > 0;
+    return isValidPairingCode(this.code);
+  }
+
+  updateCode(value: string): void {
+    this.code = value;
+    this.loadedFromQr.set(false);
+    this.error.set(null);
+  }
+
+  normalizeCode(): void {
+    const normalized = normalizePairingCode(this.code);
+    if (normalized) this.code = normalized;
   }
 
   connect(): void {
     this.error.set(null);
-    if (!this.canSubmit() || this.busy()) return;
+    if (this.busy()) return;
+
+    const normalized = normalizePairingCode(this.code);
+    if (!normalized) {
+      this.error.set('Enter a valid pairing code in XXXX-XXXX format.');
+      return;
+    }
+    this.code = normalized;
 
     this.busy.set(true);
     const existingBearer = this.auth.token();
-    this.pairing.claim(this.code.trim(), existingBearer).subscribe({
+    this.pairing.claim(normalized, existingBearer).subscribe({
       next: (response) => {
         this.auth.setSession(response.bearer, response.stores);
         this.busy.set(false);
