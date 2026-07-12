@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { take } from 'rxjs';
 
 import { isValidPairingCode, normalizePairingCode } from '../pairing-code';
 import { AuthService } from '../services/auth.service';
@@ -135,12 +135,14 @@ export class LoginPage {
   readonly loadedFromQr = signal(false);
 
   constructor() {
-    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
-      const linkedCode = normalizePairingCode(params.get('code'));
-      if (linkedCode) {
-        this.code = linkedCode;
-        this.loadedFromQr.set(true);
-      }
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const rawCode = params.get('code');
+      if (rawCode === null) return;
+
+      const linkedCode = normalizePairingCode(rawCode);
+      this.code = linkedCode;
+      this.loadedFromQr.set(linkedCode.length > 0);
+      this.error.set(null);
     });
   }
 
