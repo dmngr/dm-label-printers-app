@@ -16,6 +16,7 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./pages/device-detail.page').then((m) => m.DeviceDetailPage),
   },
+  { path: 'groups/:groupId/templates', canActivate: [authGuard], loadComponent: () => import('./pages/template-library.page').then(m => m.TemplateLibraryPage) },
   { path: '', redirectTo: 'devices', pathMatch: 'full' },
   { path: '**', redirectTo: 'devices' },
 ];
