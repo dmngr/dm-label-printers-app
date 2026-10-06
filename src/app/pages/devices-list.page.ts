@@ -1,200 +1,61 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-
 import { AuthService } from '../services/auth.service';
-import { CustomerApiService, StoreWithDevices } from '../services/customer-api.service';
+import { CustomerApiService, GroupHierarchy } from '../services/customer-api.service';
 
+/** Group grants are unchanged; stores below each group use actual StoreCode. */
 @Component({
-  selector: 'app-devices-list',
-  standalone: true,
-  imports: [RouterLink],
+  selector: 'app-devices-list', standalone: true, imports: [RouterLink],
   template: `
-    <div class="page">
-      <header>
-        <h1>Your Stores</h1>
-        <div class="header-actions">
-          <button class="btn" (click)="refresh()" [disabled]="loading()">
-            {{ loading() ? 'Loading…' : 'Refresh' }}
-          </button>
-          <button class="btn" (click)="signOut()">Sign out</button>
-        </div>
-      </header>
-
-      @if (errorMessage()) {
-        <div class="error">{{ errorMessage() }}</div>
-      }
-
-      @if (stores().length === 0 && !loading() && !errorMessage()) {
-        <div class="card">
-          <p class="muted">No devices found for your account yet.</p>
-        </div>
-      }
-
-      @for (store of stores(); track store.storeId) {
-        <section class="store">
-          <h2>
-            <span class="store-pill">{{ store.storeId }}</span>
-            <span class="muted small">{{ store.devices.length }} device(s)</span>
-          </h2>
-
-          <div class="device-grid">
-            @for (d of store.devices; track d.deviceCode) {
-              <a class="device-card" [routerLink]="['/devices', d.deviceCode]">
-                <div class="device-title">
-                  {{ d.deviceName || d.deviceCode }}
-                  @if (d.isOnline) {
-                    <span class="badge badge-active">online</span>
-                  } @else if (d.isActive) {
-                    <span class="badge badge-warn">recent</span>
-                  } @else {
-                    <span class="badge badge-mute">offline</span>
-                  }
-                </div>
-                <div class="device-meta">
-                  <span class="mono small">v{{ d.appVersion || '?' }}</span>
-                  <span class="muted small">last seen {{ relativeTime(d.lastSeenAtUtc) }}</span>
-                  @if (d.failedJobs > 0) {
-                    <span class="badge badge-stale">{{ d.failedJobs }} failed</span>
-                  }
-                  @if (d.pendingCommands > 0) {
-                    <span class="badge badge-mute">{{ d.pendingCommands }} cmd</span>
-                  }
-                </div>
+    <main class="page">
+      <header><div><span class="eyebrow">LABEL NINJA</span><h1>Οι εγκαταστάσεις σας</h1><p>Επιλέξτε πού θέλετε να εκτυπώσετε.</p></div>
+        <div class="actions"><button (click)="refresh()" [disabled]="loading()">Ανανέωση</button><button (click)="signOut()">Αποσύνδεση</button></div></header>
+      @if (errorMessage()) { <p class="error" role="alert">{{ errorMessage() }}</p> }
+      @if (loading()) { <p role="status">Φόρτωση εγκαταστάσεων…</p> }
+      @for (group of groups(); track group.groupId) {
+        <section class="group"><div class="group-heading"><h2>{{ group.groupId }}</h2>
+          <a class="library-link" [routerLink]="['/groups', group.groupId, 'templates']">Κοινή βιβλιοθήκη προτύπων →</a></div>
+          @for (store of group.stores; track store.storeCode) {
+            <h3>{{ store.storeCode || 'Χωρίς κατάστημα' }}</h3>
+            <div class="grid">@for (device of store.installations; track device.deviceCode) {
+              <a class="installation" [routerLink]="['/devices', device.deviceCode]">
+                <div class="title"><strong>{{ device.deviceName || device.deviceCode }}</strong><span class="badge" [class.online]="device.isOnline">{{ device.isOnline ? 'Συνδεδεμένο' : 'Offline' }}</span></div>
+                <p>{{ device.hostName || 'Το όνομα υπολογιστή δεν έχει αναφερθεί ακόμη' }}</p>
+                <div class="details"><span>v{{ device.appVersion || '—' }}</span><span>{{ device.printers === null ? 'Εκτυπωτές: αναμονή αναφοράς' : device.printers.length + ' εκτυπωτές' }}</span></div>
+                <small>Τελευταία επικοινωνία: {{ relativeTime(device.lastSeenAtUtc) }}</small>
               </a>
-            }
-          </div>
+            }</div>
+          } @empty { <p>Δεν έχουν συνδεθεί εγκαταστάσεις σε αυτή την ομάδα.</p> }
         </section>
-      }
-    </div>
+      } @empty { @if (!loading() && !errorMessage()) { <p>Δεν βρέθηκαν ομάδες για αυτόν τον λογαριασμό.</p> } }
+    </main>
   `,
-  styles: [
-    `
-      .page { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
-      header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-      .header-actions { display: flex; gap: 8px; }
-      h1 { margin: 0; font-size: 24px; font-weight: 700; color: #1F2937; }
-      h2 {
-        margin: 0 0 12px;
-        font-size: 14px;
-        color: #374151;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      .small { font-size: 12px; }
-      .muted { color: #6B7280; }
-      .store { margin-bottom: 28px; }
-      .store-pill {
-        display: inline-block;
-        background: #EEF2FF;
-        color: #3730A3;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      }
-      .device-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 8px;
-      }
-      .device-card {
-        background: white;
-        border: 1px solid #E5E7EB;
-        border-radius: 8px;
-        padding: 12px 14px;
-        text-decoration: none;
-        color: inherit;
-        display: block;
-        transition: border-color 0.15s, box-shadow 0.15s;
-      }
-      .device-card:hover { border-color: #93C5FD; box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08); }
-      .device-title { font-weight: 500; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-      .device-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .badge {
-        font-size: 10px;
-        padding: 2px 7px;
-        border-radius: 999px;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
-        font-weight: 600;
-      }
-      .badge-active { background: #DCFCE7; color: #14532D; }
-      .badge-warn { background: #FEF3C7; color: #92400E; }
-      .badge-mute { background: #E5E7EB; color: #4B5563; }
-      .badge-stale { background: #FEE2E2; color: #991B1B; }
-      .card {
-        background: white;
-        border: 1px solid #E5E7EB;
-        border-radius: 10px;
-        padding: 24px;
-      }
-      .error {
-        color: #991B1B;
-        background: #FEE2E2;
-        padding: 10px 14px;
-        border-radius: 8px;
-        margin-bottom: 12px;
-      }
-      .btn {
-        background: white;
-        border: 1px solid #D1D5DB;
-        padding: 8px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        cursor: pointer;
-      }
-      .btn:hover:not(:disabled) { background: #F9FAFB; }
-      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    `,
-  ],
+  styles: [`
+    .page{max-width:1060px;margin:auto;padding:32px 24px;color:#17212d}header,.group-heading,.actions,.title,.details{display:flex;align-items:center;justify-content:space-between;gap:12px}header{margin-bottom:28px}h1{font-size:28px;margin:8px 0}p,small{color:#64748b}.eyebrow{font-size:11px;font-weight:700;letter-spacing:2px;color:#4f46e5}.group{padding:24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:24px}h2{font-size:20px;margin:0}h3{font-size:14px;margin:26px 0 12px;color:#475569}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));gap:12px}.installation{display:block;border:1px solid #e2e8f0;border-radius:12px;padding:20px;color:inherit;text-decoration:none;background:#f8fafc}.installation:hover{border-color:#6366f1;background:#f5f3ff}.installation p{font-size:13px;margin:12px 0}.details{justify-content:flex-start;color:#475569;font-size:12px;margin-bottom:14px}small{font-size:11px}.badge{font-size:10px;padding:5px 8px;border-radius:16px;background:#e2e8f0;white-space:nowrap}.online{background:#dcfce7;color:#166534}.library-link{color:#4f46e5;font-size:13px;text-decoration:none}button{border:1px solid #d1d5db;background:white;border-radius:7px;padding:9px 12px;cursor:pointer}button:disabled{opacity:.5}.error{padding:15px;background:#fef2f2;color:#991b1b;border-radius:8px}@media(max-width:650px){header,.group-heading{align-items:flex-start;flex-direction:column}.page{padding:20px 14px}.group{padding:18px}.title{align-items:flex-start}}
+  `]
 })
 export class DevicesListPage implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly api = inject(CustomerApiService);
   private readonly router = inject(Router);
-
-  readonly stores = signal<StoreWithDevices[]>([]);
+  private readonly destroyRef = inject(DestroyRef);
+  readonly groups = signal<GroupHierarchy[]>([]);
   readonly loading = signal(false);
   readonly errorMessage = signal<string | null>(null);
-
-  ngOnInit(): void {
-    this.refresh();
-  }
-
+  ngOnInit(): void { this.refresh(); }
   refresh(): void {
-    this.errorMessage.set(null);
-    this.loading.set(true);
-    this.api.listDevices().subscribe({
-      next: (response) => {
-        this.stores.set(response.stores ?? []);
-        this.loading.set(false);
-      },
-      error: (err: { status?: number; message?: string }) => {
-        if (err?.status === 401 || err?.status === 403) {
-          // The interceptor already cleared the token + navigated to /login.
-          return;
-        }
-        this.errorMessage.set(err?.message ?? 'Failed to load your devices.');
-        this.loading.set(false);
-      },
+    if (this.loading()) return;
+    this.loading.set(true); this.errorMessage.set(null);
+    this.api.listGroups().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: response => { this.groups.set(response.groups); this.loading.set(false); },
+      error: () => { this.errorMessage.set('Δεν φορτώθηκαν οι εγκαταστάσεις. Δοκιμάστε ξανά. Η σύνδεσή σας διατηρείται.'); this.loading.set(false); }
     });
   }
-
-  signOut(): void {
-    this.auth.clear();
-    this.router.navigate(['/login']);
-  }
-
+  signOut(): void { this.auth.clear(); void this.router.navigate(['/login']); }
   relativeTime(iso: string | null): string {
-    if (!iso) return 'never';
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) return iso;
-    const seconds = Math.max(0, (Date.now() - t) / 1000);
-    if (seconds < 60) return `${Math.floor(seconds)}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86_400)}d ago`;
+    if (!iso || !Number.isFinite(Date.parse(iso))) return 'δεν υπάρχει αναφορά';
+    const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000));
+    return minutes < 1 ? 'μόλις τώρα' : minutes < 60 ? `${minutes} λεπτά πριν` : minutes < 1440 ? `${Math.floor(minutes / 60)} ώρες πριν` : `${Math.floor(minutes / 1440)} ημέρες πριν`;
   }
 }

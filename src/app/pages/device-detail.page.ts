@@ -4,17 +4,18 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, of, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { TemplatePrintPanelComponent } from './template-print-panel.component';
 
 import {
   CatalogProductItem,
   CatalogTemplateItem,
   CommandResponse,
   CustomerApiService,
-  DeviceListItem,
+  DeviceDetail,
   PrintJobItem,
 } from '../services/customer-api.service';
 
-type Tab = 'products' | 'templates' | 'jobs';
+type Tab = 'print' | 'products' | 'templates' | 'jobs';
 
 interface ProductDraft {
   id: number | null;
@@ -34,10 +35,10 @@ interface TemplateDraft {
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, TemplatePrintPanelComponent],
   template: `
     <div class="page">
-      <a routerLink="/devices" class="back">‹ Back to stores</a>
+      <a routerLink="/devices" class="back">‹ Εγκαταστάσεις</a>
 
       @if (errorMessage()) {
         <div class="error">{{ errorMessage() }}</div>
@@ -47,7 +48,8 @@ interface TemplateDraft {
         <header>
           <h1>{{ d.deviceName || d.deviceCode }}</h1>
           <div class="meta">
-            <span class="store-pill">{{ d.storeId }}</span>
+            <a class="store-pill" [routerLink]="['/groups', d.groupId, 'templates']">{{ d.groupId }} · Κοινή βιβλιοθήκη</a>
+            <span class="small">{{ d.storeCode || 'Χωρίς κατάστημα' }} · {{ d.hostName || d.deviceName }}</span>
             <span class="mono small">v{{ d.appVersion || '?' }}</span>
             @if (d.isOnline) {
               <span class="badge badge-active">online</span>
@@ -61,6 +63,7 @@ interface TemplateDraft {
         </header>
 
         <nav class="tabs">
+          <button class="tab" [class.active]="activeTab() === 'print'" (click)="activeTab.set('print')">Ενεργά πρότυπα</button>
           <button class="tab" [class.active]="activeTab() === 'products'" (click)="activeTab.set('products')">
             Products ({{ products().length }})
           </button>
@@ -78,6 +81,8 @@ interface TemplateDraft {
 
         @if (loading()) {
           <div class="card muted">Loading…</div>
+        } @else if (activeTab() === 'print') {
+          <app-template-print-panel [device]="d" [templates]="templates()" />
         } @else if (activeTab() === 'products') {
           @if (productDraft(); as draft) {
             <div class="card edit-card">
@@ -153,13 +158,13 @@ interface TemplateDraft {
               @for (t of templates(); track t.id) {
                 <div class="row">
                   <div class="row-main">
-                    <div class="row-title">{{ t.name }}</div>
+                    <div class="row-title">{{ t.name }} @if (t.code.startsWith('CLOUD_')) { <span class="muted small">· Κοινή βιβλιοθήκη</span> }</div>
                     <div class="row-meta">
                       <span class="mono small">{{ t.code }}</span>
                     </div>
                   </div>
-                  <button class="btn-icon" (click)="startEditTemplate(t)" [disabled]="busy()" title="Edit">✎</button>
-                  <button class="btn-icon btn-danger" (click)="deleteTemplateConfirm(t)" [disabled]="busy()" title="Delete">×</button>
+                  <button class="btn-icon" (click)="startEditTemplate(t)" [disabled]="busy() || t.code.startsWith('CLOUD_')" title="Edit">✎</button>
+                  <button class="btn-icon btn-danger" (click)="deleteTemplateConfirm(t)" [disabled]="busy() || t.code.startsWith('CLOUD_')" title="Delete">×</button>
                 </div>
               }
             </div>
@@ -318,13 +323,13 @@ export class DeviceDetailPage implements OnInit {
   private readonly router = inject(Router);
   private readonly api = inject(CustomerApiService);
 
-  readonly device = signal<(DeviceListItem & { storeId: string }) | null>(null);
+  readonly device = signal<DeviceDetail | null>(null);
   readonly products = signal<CatalogProductItem[]>([]);
   readonly templates = signal<CatalogTemplateItem[]>([]);
   readonly jobs = signal<PrintJobItem[]>([]);
   readonly loading = signal(true);
   readonly errorMessage = signal<string | null>(null);
-  readonly activeTab = signal<Tab>('products');
+  readonly activeTab = signal<Tab>('print');
   readonly busy = signal(false);
   readonly toast = signal<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null);
   private readonly destroyRef = inject(DestroyRef);
@@ -343,6 +348,7 @@ export class DeviceDetailPage implements OnInit {
 
   private loadAll(deviceCode: string): void {
     this.loading.set(true);
+    this.errorMessage.set(null);
     this.api
       .getDevice(deviceCode)
       .pipe(
@@ -350,7 +356,7 @@ export class DeviceDetailPage implements OnInit {
           forkJoin({
             device: of(d),
             products: this.api.listProducts(deviceCode).pipe(catchError(() => of({ items: [] }))),
-            templates: this.api.listTemplates(deviceCode).pipe(catchError(() => of({ items: [] }))),
+            templates: this.api.listTemplates(deviceCode),
             jobs: this.api.listJobs(deviceCode, 50).pipe(catchError(() => of({ items: [], nextCursor: null }))),
           }),
         ),
@@ -364,7 +370,7 @@ export class DeviceDetailPage implements OnInit {
           this.loading.set(false);
         },
         error: (err: { status?: number; message?: string }) => {
-          if (err?.status === 401 || err?.status === 403) return;
+          // Keep valid sessions on access/service failures; report the failed load.
           this.errorMessage.set(err?.message ?? 'Failed to load device.');
           this.loading.set(false);
         },
@@ -444,7 +450,7 @@ export class DeviceDetailPage implements OnInit {
   }
 
   startEditTemplate(t: CatalogTemplateItem): void {
-    this.templateDraft.set({ id: t.id, code: t.code, name: t.name, body: '' });
+    this.templateDraft.set({ id: t.id, code: t.code, name: t.name, body: t.layoutJson || '' });
   }
 
   cancelTemplateEdit(): void {

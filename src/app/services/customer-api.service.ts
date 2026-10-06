@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { EMPTY, Observable, interval } from 'rxjs';
-import { catchError, distinctUntilChanged, switchMap, takeWhile } from 'rxjs/operators';
+import { Observable } from 'rxjs';
+import { pollCommand } from '../shared/command-status';
 
 const API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.eu-west-1.on.aws';
 
@@ -21,6 +21,16 @@ export interface DeviceListItem {
   pendingCommands: number;
   failedJobs: number;
 }
+
+export interface DeviceDetail extends DeviceListItem {
+  storeId: string; groupId: string; storeCode: string; installationId: string | null; hostName: string | null;
+  printers: { name: string; isDefault: boolean }[] | null; printersReportedAtUtc: string | null;
+}
+export interface GroupHierarchy { groupId: string; stores: { storeCode: string; installations: DeviceDetail[] }[]; }
+export interface LibraryTemplate { id: string; version: number; name: string; width: number; height: number; layoutJson: string; updatedAtUtc: string; }
+export type TemplateHead = Omit<LibraryTemplate, 'layoutJson'>;
+export interface AssignmentEntry { templateId: string; version: number; printerName?: string; }
+export interface TemplateAssignment { revision: number; inherit: boolean; entries: AssignmentEntry[]; }
 
 export interface StoreWithDevices {
   storeId: string;
@@ -50,6 +60,12 @@ export interface CatalogProductsResponse {
 }
 
 export interface CatalogTemplateItem {
+  layoutJson: string;
+  width: number;
+  height: number;
+  printerName: string;
+  isActive: boolean;
+  displayOrder: number;
   id: number;
   code: string;
   name: string;
@@ -86,6 +102,34 @@ export interface PrintJobsResponse {
 export class CustomerApiService {
   private readonly http = inject(HttpClient);
 
+  listGroups(): Observable<{ groups: GroupHierarchy[] }> {
+    return this.http.get<{ groups: GroupHierarchy[] }>(`${API_BASE}/api/v1/me/groups`);
+  }
+
+  listLibrary(group: string): Observable<{ items: TemplateHead[] }> {
+    return this.http.get<{ items: TemplateHead[] }>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates`);
+  }
+
+  getLibraryTemplate(group: string, id: string, version?: number): Observable<LibraryTemplate> {
+    return this.http.get<LibraryTemplate>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates/${encodeURIComponent(id)}`, { params: version === undefined ? {} : { version } });
+  }
+
+  saveLibraryTemplate(group: string, id: string, template: { name: string; width: number; height: number; layoutJson: string; expectedVersion: number }): Observable<LibraryTemplate> {
+    return this.http.post<LibraryTemplate>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates/${encodeURIComponent(id)}`, template);
+  }
+
+  getAssignment(group: string, kind: 'store' | 'installation', target: string): Observable<TemplateAssignment> {
+    return this.http.get<TemplateAssignment>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/${kind}s/${encodeURIComponent(target)}/assignment`);
+  }
+
+  saveAssignment(group: string, kind: 'store' | 'installation', target: string, assignment: { expectedRevision: number; inherit: boolean; entries: AssignmentEntry[] }): Observable<TemplateAssignment> {
+    return this.http.post<TemplateAssignment>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/${kind}s/${encodeURIComponent(target)}/assignment`, assignment);
+  }
+
+  printTemplate(deviceCode: string, templateCode: string, fields: Record<string, string | null>, quantity: number): Observable<CommandResponse> {
+    return this.http.post<CommandResponse>(`${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/commands`, { commandType: 'print-label', templateCode, fields, quantity });
+  }
+
   listStores(): Observable<StoresResponse> {
     return this.http.get<StoresResponse>(`${API_BASE}/api/v1/me/stores`);
   }
@@ -94,8 +138,8 @@ export class CustomerApiService {
     return this.http.get<DevicesResponse>(`${API_BASE}/api/v1/me/devices`);
   }
 
-  getDevice(deviceCode: string): Observable<DeviceListItem & { storeId: string }> {
-    return this.http.get<DeviceListItem & { storeId: string }>(
+  getDevice(deviceCode: string): Observable<DeviceDetail> {
+    return this.http.get<DeviceDetail>(
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}`,
     );
   }
@@ -169,39 +213,15 @@ export class CustomerApiService {
     );
   }
 
-  /**
-   * Phase 4 live monitoring: emits the command's status whenever it changes,
-   * polling the GET endpoint every `intervalMs` ms (default 2s — well under
-   * the design doc's "<2s after device emits" target). Completes once the
-   * status is terminal (Completed | Failed) or the safety cap is hit.
-   *
-   * Cheaper than the alternative SSE/WebSocket pipeline at our scale: ~30
-   * GETs per command at $0.05 per million Lambda invocations + sub-cent
-   * DynamoDB GetItem cost = effectively $0/month at 100 customers issuing
-   * ~10 commands/day each. Upgrade to DynamoDB Streams + API Gateway
-   * WebSockets if customer count grows past ~5k.
-   */
+  /** Bounded status monitoring; completion is not proof of physical output. */
   streamCommand(
     deviceCode: string,
     id: number,
     intervalMs = 2000,
     maxDurationMs = 60_000,
   ): Observable<CommandDetail> {
-    const deadline = Date.now() + maxDurationMs;
-    return interval(intervalMs).pipe(
-      switchMap(() => this.getCommand(deviceCode, id).pipe(catchError(() => EMPTY))),
-      distinctUntilChanged((a, b) => a.status === b.status),
-      takeWhile(
-        (cmd) => Date.now() < deadline && !isTerminal(cmd.status),
-        true,
-      ),
-    );
+    return pollCommand(() => this.getCommand(deviceCode, id), intervalMs, maxDurationMs);
   }
-}
-
-function isTerminal(status: string): boolean {
-  const s = (status ?? '').toLowerCase();
-  return s === 'completed' || s === 'failed';
 }
 
 export interface CommandResponse {

@@ -1,7 +1,5 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { tap } from 'rxjs';
 
 import { AuthService } from './auth.service';
 
@@ -14,24 +12,16 @@ const CUSTOMER_API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.e
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
-  const router = inject(Router);
 
   const token = auth.token();
   let outbound = req;
-  if (token && CUSTOMER_API_BASE && req.url.startsWith(CUSTOMER_API_BASE)) {
+  if (token && new URL(req.url, globalThis.location?.origin).origin === new URL(CUSTOMER_API_BASE).origin) {
     outbound = req.clone({
       setHeaders: { Authorization: `Bearer ${token}` },
     });
   }
 
-  return next(outbound).pipe(
-    tap({
-      error: (err) => {
-        if (err?.status === 401 || err?.status === 403) {
-          auth.clear();
-          router.navigate(['/login']);
-        }
-      },
-    }),
-  );
+  // Permission denials and service failures do not prove token expiry. Keep the
+  // persisted session; the page reports the error and explicit sign-out remains.
+  return next(outbound);
 };
