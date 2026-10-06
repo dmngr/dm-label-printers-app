@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { CustomerApiService, GroupHierarchy } from '../services/customer-api.service';
+import { parseUtcTimestamp } from '../shared/utc-timestamp';
 
 /** Group grants are unchanged; stores below each group use actual StoreCode. */
 @Component({
@@ -54,8 +55,9 @@ export class DevicesListPage implements OnInit {
   }
   signOut(): void { this.auth.clear(); void this.router.navigate(['/login']); }
   relativeTime(iso: string | null): string {
-    if (!iso || !Number.isFinite(Date.parse(iso))) return 'δεν υπάρχει αναφορά';
-    const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000));
+    const timestamp = parseUtcTimestamp(iso);
+    if (!Number.isFinite(timestamp)) return 'δεν υπάρχει αναφορά';
+    const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
     return minutes < 1 ? 'μόλις τώρα' : minutes < 60 ? `${minutes} λεπτά πριν` : minutes < 1440 ? `${Math.floor(minutes / 60)} ώρες πριν` : `${Math.floor(minutes / 1440)} ημέρες πριν`;
   }
 }

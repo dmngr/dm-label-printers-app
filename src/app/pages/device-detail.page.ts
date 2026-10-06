@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, of, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TemplatePrintPanelComponent } from './template-print-panel.component';
+import { parseUtcTimestamp } from '../shared/utc-timestamp';
 
 import {
   CatalogProductItem,
@@ -578,7 +579,7 @@ export class DeviceDetailPage implements OnInit {
 
   relativeTime(iso: string | null | undefined): string {
     if (!iso) return 'never';
-    const t = Date.parse(iso);
+    const t = parseUtcTimestamp(iso);
     if (Number.isNaN(t)) return iso ?? '';
     const seconds = Math.max(0, (Date.now() - t) / 1000);
     if (seconds < 60) return `${Math.floor(seconds)}s ago`;
