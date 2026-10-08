@@ -15,9 +15,10 @@
     "watch": "ng build --watch --configuration development",
     "test": "node --test src/app/pairing-code.test.ts src/app/shared/*.test.ts scripts/*.test.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
-    "check": "npm test && npm run build:prod && npm run audit:prod",
+    "check": "npm test && npm run build:prod && npm run audit:all",
     "invalidate:cf:prod": "aws cloudfront create-invalidation --distribution-id E15UYTBZU09NW --paths \"/index.html\" --profile dm",
-    "deploy:prod": "npm run build:prod && node scripts/deploy-prod.mjs"
+    "deploy:prod": "npm run build:prod && node scripts/deploy-prod.mjs",
+    "audit:all": "npm audit --audit-level=moderate"
   },
   "dependencies": {
     "@angular/animations": "21.2.25",
@@ -35,9 +36,9 @@
     "zone.js": "~0.15.1"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "21.2.25",
-    "@angular/cli": "21.2.25",
+    "@angular/cli": "21.2.26",
     "@angular/compiler-cli": "21.2.25",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "@angular/build": "21.2.26"
   }
 }
