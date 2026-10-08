@@ -13,6 +13,7 @@
     "declaration": false,
     "experimentalDecorators": true,
     "moduleResolution": "bundler",
+    "rewriteRelativeImportExtensions": true,
     "importHelpers": true,
     "target": "ES2022",
     "module": "ES2022",
