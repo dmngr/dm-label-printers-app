@@ -5,6 +5,8 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { AssignmentEntry, CatalogTemplateItem, CustomerApiService, DeviceDetail, GroupHierarchy, TemplateAssignment, TemplateHead } from '../services/customer-api.service';
 import { readTemplateInputs } from '../shared/template-inputs';
+import { LibraryApplicationStatusComponent } from './library-application-status.component';
+import { retryDraftRevision, type LibraryRetryCompleted } from '../shared/library-application';
 
 interface Target { kind: 'store' | 'installation'; id: string; label: string; device?: DeviceDetail; }
 const initialLayout = JSON.stringify({ elements: [{ type: 'text', field: 'title', x: 3, y: 4, width: 50, height: 20, fontSize: 14 }], inputs: [{ key: 'title', label: 'Τίτλος', type: 'text', required: true }] }, null, 2);
@@ -15,7 +17,7 @@ const initialLayout = JSON.stringify({ elements: [{ type: 'text', field: 'title'
  */
 @Component({
   selector: 'app-template-library', standalone: true,
-  imports: [RouterLink, ReactiveFormsModule, FormsModule],
+  imports: [RouterLink, ReactiveFormsModule, FormsModule, LibraryApplicationStatusComponent],
   template: `
     <main class="page">
       <a routerLink="/devices" class="back">‹ Εγκαταστάσεις</a>
@@ -60,6 +62,9 @@ const initialLayout = JSON.stringify({ elements: [{ type: 'text', field: 'title'
             <p class="hint">Οι offline εγκαταστάσεις θα ενημερωθούν όταν συνδεθούν. Απαιτείται agent με υποστήριξη κοινής βιβλιοθήκης.</p>
           } }
         </section>
+        @if (selectedTarget(); as target) { @if (draft()) {
+          <app-library-application-status [group]="groupId" [targetKind]="target.kind" [targetId]="target.id" [refreshKey]="applicationRefresh()" [disabled]="saving()" (retryCompleted)="retryRevisionChanged($event)" />
+        } }
       </div>
       @if (editing()) {
         <div class="editor-backdrop"><section class="editor" role="dialog" aria-modal="true" aria-labelledby="editor-title">
@@ -77,6 +82,7 @@ const initialLayout = JSON.stringify({ elements: [{ type: 'text', field: 'title'
     </main>
   `,
   styles: [`
+    .layout>app-library-application-status{grid-column:1;grid-row:2}.layout>.assignments{grid-column:2;grid-row:1 / 3}@media(max-width:850px){.layout>.assignments{grid-column:auto;grid-row:auto;order:2}.layout>app-library-application-status{grid-column:auto;grid-row:auto;order:3}}
     .page{max-width:1120px;margin:auto;padding:28px 24px;color:#17212d}.back{font-size:13px;color:#4f46e5;text-decoration:none}header{display:flex;justify-content:space-between;align-items:center;gap:24px;margin:24px 0 30px}h1{font-size:30px;margin:8px 0}h2{font-size:18px;margin:0 0 18px}h2 span{color:#94a3b8;font-size:14px;margin-left:8px}p{color:#64748b;font-size:14px;line-height:1.5}.eyebrow{font-size:11px;font-weight:700;letter-spacing:1.5px;color:#6366f1}.layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:28px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}.template-card{text-align:left;padding:20px;display:flex;flex-direction:column;gap:12px;background:white;border:1px solid #e2e8f0;border-radius:12px;cursor:pointer}.template-card:hover{border-color:#6366f1}.paper{display:grid;place-items:center;height:80px;width:100%;background:#f1f5f9;border-radius:8px;color:#94a3b8;font-size:30px}.template-card small{color:#64748b}.edit-link{color:#4f46e5;font-size:11px}.assignments{padding:24px;border:1px solid #e2e8f0;background:white;border-radius:14px;align-self:start}.assignments p{font-size:12px}label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#475569;margin:14px 0}input,select,textarea{box-sizing:border-box;width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:10px;background:white;color:#17212d;font:inherit}textarea{font-family:monospace;resize:vertical;font-size:12px}.check{flex-direction:row;align-items:center;gap:10px;font-size:13px}.check input{width:17px;height:17px}.choice{border-bottom:1px solid #eef2f6;padding-bottom:8px}.version{display:flex;align-items:center;gap:16px}.version input{width:85px}.version small{font-size:11px;color:#64748b}.hint{font-size:12px!important;line-height:1.6}.wide{width:100%;margin-top:18px}button{border:1px solid #cbd5e1;background:white;padding:10px 14px;border-radius:7px;color:#334155;cursor:pointer;font-size:13px}button:disabled{opacity:.5;cursor:not-allowed}.primary{background:#4f46e5;border-color:#4f46e5;color:white}.error{background:#fef2f2;color:#991b1b;padding:12px;border-radius:8px}.message{background:#ecfdf5;color:#166534;padding:14px;border-radius:8px}.import{margin-top:28px;padding:18px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px}summary{font-size:13px;cursor:pointer;color:#475569}.import-row{width:100%;display:flex;justify-content:space-between;margin-top:10px}.import-row span{color:#4f46e5}.editor-backdrop{position:fixed;inset:0;background:#17212d80;display:flex;align-items:center;justify-content:center;padding:20px;z-index:10}.editor{background:white;padding:28px;border-radius:16px;width:540px;max-height:85vh;overflow:auto;box-shadow:0 24px 70px #0003}.dimensions,.actions{display:flex;gap:16px}.dimensions label{flex:1}.actions{justify-content:flex-end;margin-top:24px}.empty{padding:28px;background:#f8fafc;border-radius:12px}@media(max-width:850px){.layout{grid-template-columns:1fr}.assignments{order:2}header{align-items:flex-start;flex-direction:column}.page{padding:22px 16px}.editor{padding:20px}}
   `]
 })
@@ -93,6 +99,7 @@ export class TemplateLibraryPage implements OnInit {
   readonly sourceTemplates = signal<CatalogTemplateItem[]>([]);
   readonly targetIndex = signal(-1); readonly draft = signal<TemplateAssignment | null>(null);
   readonly assignmentLoading = signal(false);
+  readonly applicationRefresh = signal(0);
   readonly devices = computed(() => this.hierarchy()?.stores.flatMap(store => store.installations) ?? []);
   readonly targets = computed<Target[]>(() => this.hierarchy()?.stores.flatMap(store => [
     ...(store.storeCode ? [{ kind: 'store' as const, id: store.storeCode, label: `Κατάστημα · ${store.storeCode}` }] : []),
@@ -150,11 +157,16 @@ export class TemplateLibraryPage implements OnInit {
   setPrinter(id: string, printerName: string): void { this.updateEntry(id, { printerName: printerName || undefined }); }
   private updateEntry(id: string, change: Partial<AssignmentEntry>): void { this.draft.update(value => value ? { ...value, entries: value.entries.map(entry => entry.templateId === id ? { ...entry, ...change } : entry) } : null); }
   hasPrinter(target: Target, name: string): boolean { return target.device?.printers?.some(printer => printer.name === name) ?? false; }
+  retryRevisionChanged(result: LibraryRetryCompleted): void {
+    const target = this.selectedTarget();
+    if (target?.kind === 'installation' && target.id === result.deviceCode)
+      this.draft.update(draft => draft ? { ...draft, revision: retryDraftRevision(draft.revision, result) } : null);
+  }
   saveSelection(): void {
     const target = this.selectedTarget(); const draft = this.draft(); if (!target || !draft || this.saving()) return;
     this.saving.set(true); this.error.set('');
     this.api.saveAssignment(this.groupId, target.kind, target.id, { expectedRevision: draft.revision, inherit: draft.inherit, entries: draft.entries }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: result => { this.draft.set(result); this.saving.set(false); this.message.set('Οι επιλογές αποθηκεύτηκαν. Θα εφαρμοστούν στον επόμενο συγχρονισμό, αφού ολοκληρωθούν οι εκκρεμείς εκτυπώσεις.'); },
+      next: result => { this.draft.set(result); this.saving.set(false); this.applicationRefresh.update(value => value + 1); this.message.set('Οι επιλογές αποθηκεύτηκαν. Παρακολουθήστε παρακάτω την επιβεβαίωση από κάθε εγκατάσταση.'); },
       error: error => { this.saving.set(false); this.error.set(error.status === 409 ? 'Οι επιλογές άλλαξαν αλλού. Επιλέξτε ξανά την εγκατάσταση για να φορτώσετε τις τρέχουσες.' : 'Οι επιλογές δεν αποθηκεύτηκαν. Ελέγξτε τις εκδόσεις και δοκιμάστε ξανά.'); }
     });
   }

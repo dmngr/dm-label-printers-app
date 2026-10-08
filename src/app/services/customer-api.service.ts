@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { pollCommand } from '../shared/command-status';
+import type { LibraryApplicationStatus, LibraryRetryResult } from '../shared/library-application';
 
 const API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.eu-west-1.on.aws';
 
@@ -120,6 +121,14 @@ export class CustomerApiService {
 
   getAssignment(group: string, kind: 'store' | 'installation', target: string): Observable<TemplateAssignment> {
     return this.http.get<TemplateAssignment>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/${kind}s/${encodeURIComponent(target)}/assignment`);
+  }
+
+  getLibraryApplications(group: string, kind: 'store' | 'installation', target: string): Observable<{ items: LibraryApplicationStatus[] }> {
+    return this.http.get<{ items: LibraryApplicationStatus[] }>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/${kind}s/${encodeURIComponent(target)}/applications`);
+  }
+
+  retryLibraryApplication(group: string, deviceCode: string, expectedSelectionId: string): Observable<LibraryRetryResult> {
+    return this.http.post<LibraryRetryResult>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/installations/${encodeURIComponent(deviceCode)}/applications/retry`, { expectedSelectionId });
   }
 
   saveAssignment(group: string, kind: 'store' | 'installation', target: string, assignment: { expectedRevision: number; inherit: boolean; entries: AssignmentEntry[] }): Observable<TemplateAssignment> {

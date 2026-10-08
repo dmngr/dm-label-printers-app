@@ -9,6 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, Subject, distinctUntilChanged, forkJoin, fromEvent, map, startWith, switchMap, takeUntil } from 'rxjs';
 import { TemplatePrintPanelComponent } from './template-print-panel.component';
+import { LibraryApplicationStatusComponent } from './library-application-status.component';
 import { parseUtcTimestamp } from '../shared/utc-timestamp';
 import { refreshVisiblePage } from '../shared/page-refresh';
 import { refreshText } from '../shared/refresh-text';
@@ -42,7 +43,7 @@ interface TemplateDraft {
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, FormsModule, TemplatePrintPanelComponent],
+  imports: [RouterLink, FormsModule, TemplatePrintPanelComponent, LibraryApplicationStatusComponent],
   template: `
     <div class="page">
       <a routerLink="/devices" class="back">‹ Εγκαταστάσεις</a>
@@ -73,6 +74,8 @@ interface TemplateDraft {
             <span class="muted small">last seen {{ relativeTime(d.lastSeenAtUtc) }}</span>
           </div>
         </header>
+
+        <app-library-application-status [group]="d.groupId" targetKind="installation" [targetId]="d.deviceCode" />
 
         <nav class="tabs">
           <button class="tab" [class.active]="activeTab() === 'print'" (click)="activeTab.set('print')">Ενεργά πρότυπα</button>
