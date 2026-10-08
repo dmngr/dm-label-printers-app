@@ -1,11 +1,17 @@
+/** Live installation snapshot. Background reads never rebuild draft forms or
+ * turn a failed read into an empty catalog. Route changes cancel old readers;
+ * command notifications share the same serialized refresh path as the timer.
+ */
+import { DOCUMENT } from '@angular/common';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, of, switchMap } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { EMPTY, Subject, distinctUntilChanged, forkJoin, fromEvent, map, startWith, switchMap, takeUntil } from 'rxjs';
 import { TemplatePrintPanelComponent } from './template-print-panel.component';
 import { parseUtcTimestamp } from '../shared/utc-timestamp';
+import { refreshVisiblePage } from '../shared/page-refresh';
+import { refreshText } from '../shared/refresh-text';
 
 import {
   CatalogProductItem,
@@ -41,8 +47,13 @@ interface TemplateDraft {
     <div class="page">
       <a routerLink="/devices" class="back">‹ Εγκαταστάσεις</a>
 
+      <div class="refresh-row">
+        <span class="muted small">{{ copy.automatic }}@if (updatedAt()) { · {{ copy.updated }} {{ relativeTime(updatedAt()) }} }</span>
+        <button class="btn-secondary" (click)="requestRefresh()" [disabled]="refreshing()">{{ refreshing() ? copy.refreshing : copy.refresh }}</button>
+      </div>
+
       @if (errorMessage()) {
-        <div class="error">{{ errorMessage() }}</div>
+        <div class="error" role="alert">{{ errorMessage() }}</div>
       }
 
       @if (device(); as d) {
@@ -66,13 +77,13 @@ interface TemplateDraft {
         <nav class="tabs">
           <button class="tab" [class.active]="activeTab() === 'print'" (click)="activeTab.set('print')">Ενεργά πρότυπα</button>
           <button class="tab" [class.active]="activeTab() === 'products'" (click)="activeTab.set('products')">
-            Products ({{ products().length }})
+            {{ copy.products }} ({{ products().length }})
           </button>
           <button class="tab" [class.active]="activeTab() === 'templates'" (click)="activeTab.set('templates')">
-            Templates ({{ templates().length }})
+            {{ copy.templates }} ({{ templates().length }})
           </button>
           <button class="tab" [class.active]="activeTab() === 'jobs'" (click)="activeTab.set('jobs')">
-            Recent jobs ({{ jobs().length }})
+            {{ copy.jobs }} ({{ jobs().length }})
           </button>
         </nav>
 
@@ -81,10 +92,13 @@ interface TemplateDraft {
         }
 
         @if (loading()) {
-          <div class="card muted">Loading…</div>
-        } @else if (activeTab() === 'print') {
-          <app-template-print-panel [device]="d" [templates]="templates()" />
-        } @else if (activeTab() === 'products') {
+          <div class="card muted">{{ copy.loading }}</div>
+        } @else {
+          <div [hidden]="activeTab() !== 'print'">
+            <app-template-print-panel [device]="d" [templates]="templates()" [catalogCurrent]="!errorMessage()" (printProgress)="requestRefresh()" />
+          </div>
+        }
+        @if (activeTab() === 'products') {
           @if (productDraft(); as draft) {
             <div class="card edit-card">
               <h3>{{ draft.id ? 'Edit product' : 'New product' }}</h3>
@@ -216,6 +230,9 @@ interface TemplateDraft {
       .page { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
       .back { display: inline-block; color: #4F46E5; text-decoration: none; font-size: 13px; margin-bottom: 16px; }
       .back:hover { text-decoration: underline; }
+      .refresh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+      .refresh-row button { flex-shrink: 0; }
+      .tabs { flex-wrap: wrap; }
       header { margin-bottom: 20px; }
       h1 { margin: 0 0 8px; font-size: 22px; font-weight: 700; color: #1F2937; }
       .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -287,25 +304,21 @@ interface TemplateDraft {
         margin-bottom: 12px; font-weight: 500;
       }
       .btn-add:hover { background: #EEF2FF; }
-      .btn-primary {
+      .btn-primary, .btn-print {
         background: #4F46E5; color: white; border: 0;
-        padding: 8px 16px; border-radius: 6px; font-size: 13px;
-        font-weight: 500; cursor: pointer;
+        border-radius: 6px; font-weight: 500; cursor: pointer;
       }
-      .btn-primary:hover:not(:disabled) { background: #4338CA; }
-      .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+      .btn-primary { padding: 8px 16px; font-size: 13px; }
+      .btn-primary:hover:not(:disabled), .btn-print:hover:not(:disabled) { background: #4338CA; }
       .btn-secondary {
         background: white; color: #4B5563; border: 1px solid #D1D5DB;
         padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
       }
       .btn-secondary:hover:not(:disabled) { background: #F9FAFB; }
       .btn-print {
-        background: #4F46E5; color: white; border: 0;
-        padding: 6px 12px; border-radius: 6px; font-size: 12px;
-        font-weight: 500; cursor: pointer;
+        padding: 6px 12px; font-size: 12px;
       }
-      .btn-print:hover:not(:disabled) { background: #4338CA; }
-      .btn-print:disabled, .btn-icon:disabled { opacity: 0.5; cursor: not-allowed; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
       .btn-icon {
         background: transparent; border: 1px solid #E5E7EB; color: #6B7280;
         width: 32px; height: 32px; padding: 0; border-radius: 6px;
@@ -323,6 +336,14 @@ export class DeviceDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly api = inject(CustomerApiService);
+  private readonly document = inject(DOCUMENT);
+  private readonly requestedRefresh = new Subject<void>();
+  private readonly deviceChanged = new Subject<void>();
+
+  readonly copy = refreshText;
+  readonly refreshing = signal(false);
+  readonly updatedAt = signal<string | null>(null);
+  readonly nowMs = signal(Date.now());
 
   readonly device = signal<DeviceDetail | null>(null);
   readonly products = signal<CatalogProductItem[]>([]);
@@ -339,43 +360,48 @@ export class DeviceDetailPage implements OnInit {
   readonly templateDraft = signal<TemplateDraft | null>(null);
 
   ngOnInit(): void {
-    const code = this.route.snapshot.paramMap.get('deviceCode') ?? '';
-    if (!code) {
-      this.router.navigate(['/devices']);
-      return;
-    }
-    this.loadAll(code);
+    const visible = fromEvent(this.document, 'visibilitychange').pipe(
+      startWith(null), map(() => this.document.visibilityState !== 'hidden'),
+    );
+    this.route.paramMap.pipe(
+      map(params => params.get('deviceCode') ?? ''),
+      distinctUntilChanged(),
+      switchMap(code => {
+        this.deviceChanged.next();
+        this.device.set(null); this.products.set([]); this.templates.set([]); this.jobs.set([]);
+        this.productDraft.set(null); this.templateDraft.set(null); this.toast.set(null);
+        this.busy.set(false); this.loading.set(true); this.refreshing.set(false);
+        this.updatedAt.set(null); this.errorMessage.set(null);
+        if (!code) { this.router.navigate(['/devices']); return EMPTY; }
+        return refreshVisiblePage(() => forkJoin({
+          device: this.api.getDevice(code),
+          products: this.api.listProducts(code),
+          templates: this.api.listTemplates(code),
+          jobs: this.api.listJobs(code, 50),
+        }), visible, this.requestedRefresh);
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(result => {
+      this.nowMs.set(Date.now());
+      this.refreshing.set(result.state === 'refreshing');
+      if (result.state === 'refreshing') return;
+      this.loading.set(false);
+      if (result.state === 'ready') {
+        const { device, products, templates, jobs } = result.value;
+        this.device.set(device);
+        this.products.set(products.items ?? []);
+        this.templates.set(templates.items ?? []);
+        this.jobs.set(jobs.items ?? []);
+        this.updatedAt.set(new Date(this.nowMs()).toISOString());
+        this.errorMessage.set(null);
+      } else {
+        this.errorMessage.set(this.device() ? this.copy.failed : this.copy.initialFailed);
+      }
+    });
   }
 
-  private loadAll(deviceCode: string): void {
-    this.loading.set(true);
-    this.errorMessage.set(null);
-    this.api
-      .getDevice(deviceCode)
-      .pipe(
-        switchMap((d) =>
-          forkJoin({
-            device: of(d),
-            products: this.api.listProducts(deviceCode).pipe(catchError(() => of({ items: [] }))),
-            templates: this.api.listTemplates(deviceCode),
-            jobs: this.api.listJobs(deviceCode, 50).pipe(catchError(() => of({ items: [], nextCursor: null }))),
-          }),
-        ),
-      )
-      .subscribe({
-        next: ({ device, products, templates, jobs }) => {
-          this.device.set(device);
-          this.products.set(products.items ?? []);
-          this.templates.set(templates.items ?? []);
-          this.jobs.set(jobs.items ?? []);
-          this.loading.set(false);
-        },
-        error: (err: { status?: number; message?: string }) => {
-          // Keep valid sessions on access/service failures; report the failed load.
-          this.errorMessage.set(err?.message ?? 'Failed to load device.');
-          this.loading.set(false);
-        },
-      });
+  requestRefresh(): void {
+    this.requestedRefresh.next();
   }
 
   // Products
@@ -413,7 +439,7 @@ export class DeviceDetailPage implements OnInit {
       name: draft.name.trim(),
       categoryName: draft.categoryName.trim() || undefined,
       priceCents,
-    }).subscribe({
+    }).pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (cmd) => {
         this.productDraft.set(null);
         this.busy.set(false);
@@ -432,7 +458,7 @@ export class DeviceDetailPage implements OnInit {
     const d = this.device();
     if (!d) return;
     this.busy.set(true);
-    this.api.deleteProduct(d.deviceCode, p.id).subscribe({
+    this.api.deleteProduct(d.deviceCode, p.id).pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (cmd) => {
         this.busy.set(false);
         this.flashToast('info', `Product delete queued (cmd #${cmd.id})`);
@@ -468,7 +494,7 @@ export class DeviceDetailPage implements OnInit {
       code: draft.code.trim(),
       name: draft.name.trim(),
       body: draft.body.trim() || undefined,
-    }).subscribe({
+    }).pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (cmd) => {
         this.templateDraft.set(null);
         this.busy.set(false);
@@ -487,7 +513,7 @@ export class DeviceDetailPage implements OnInit {
     const d = this.device();
     if (!d) return;
     this.busy.set(true);
-    this.api.deleteTemplate(d.deviceCode, t.id).subscribe({
+    this.api.deleteTemplate(d.deviceCode, t.id).pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (cmd) => {
         this.busy.set(false);
         this.flashToast('info', `Template delete queued (cmd #${cmd.id})`);
@@ -505,7 +531,7 @@ export class DeviceDetailPage implements OnInit {
     const d = this.device();
     if (!d || this.busy()) return;
     this.busy.set(true);
-    this.api.printLabel(d.deviceCode, p.code, 1).subscribe({
+    this.api.printLabel(d.deviceCode, p.code, 1).pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (cmd: CommandResponse) => {
         this.busy.set(false);
         this.flashToast('info', `Print queued (cmd #${cmd.id})`);
@@ -536,7 +562,7 @@ export class DeviceDetailPage implements OnInit {
   private trackCommand(label: string, deviceCode: string, cmdId: number, refresh: 'products' | 'templates' | 'jobs' | 'all' | 'none'): void {
     this.api
       .streamCommand(deviceCode, cmdId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntil(this.deviceChanged), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (cmd) => {
           const s = (cmd.status ?? '').toLowerCase();
@@ -553,16 +579,7 @@ export class DeviceDetailPage implements OnInit {
   }
 
   private refreshAfterCommand(deviceCode: string, scope: 'products' | 'templates' | 'jobs' | 'all' | 'none'): void {
-    if (scope === 'none') return;
-    if (scope === 'products' || scope === 'all') {
-      this.api.listProducts(deviceCode).pipe(catchError(() => of({ items: [] }))).subscribe((r) => this.products.set(r.items ?? []));
-    }
-    if (scope === 'templates' || scope === 'all') {
-      this.api.listTemplates(deviceCode).pipe(catchError(() => of({ items: [] }))).subscribe((r) => this.templates.set(r.items ?? []));
-    }
-    if (scope === 'jobs' || scope === 'all') {
-      this.api.listJobs(deviceCode, 50).pipe(catchError(() => of({ items: [], nextCursor: null }))).subscribe((r) => this.jobs.set(r.items ?? []));
-    }
+    if (scope !== 'none' && this.device()?.deviceCode === deviceCode) this.requestRefresh();
   }
 
   formatPrice(cents: number): string {
@@ -581,7 +598,7 @@ export class DeviceDetailPage implements OnInit {
     if (!iso) return 'never';
     const t = parseUtcTimestamp(iso);
     if (Number.isNaN(t)) return iso ?? '';
-    const seconds = Math.max(0, (Date.now() - t) / 1000);
+    const seconds = Math.max(0, (this.nowMs() - t) / 1000);
     if (seconds < 60) return `${Math.floor(seconds)}s ago`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
