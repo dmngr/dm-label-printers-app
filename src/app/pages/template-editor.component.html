@@ -1,0 +1,20 @@
+<dialog #dialog (cancel)="close($event)" aria-labelledby="template-editor-title">
+  <form [formGroup]="form" (ngSubmit)="submit()">
+    <header><div><span>LABEL NINJA · {{ expectedVersion() ? 'v' + (expectedVersion() + 1) : 'v1' }}</span><h2 id="template-editor-title">{{ expectedVersion() ? copy.editTemplate : copy.newTemplate }}</h2></div><button class="close" type="button" (click)="close()" [disabled]="saving()" [attr.aria-label]="copy.close">×</button></header>
+    <div class="body">
+      @if (loading()) { <p class="loading" role="status">{{ copy.loading }}</p> }
+      @if (serverError() && (!template() || loading())) { <p class="error" role="alert">{{ serverError() }}</p> }
+      @if (template() && !loading()) {
+        <fieldset [disabled]="saving()" class="identity"><label class="name">{{ copy.name }}<input formControlName="name" maxlength="200" autofocus /></label><label>{{ copy.width }} (mm)<input type="number" min="1" max="1000" step=".1" formControlName="width" /></label><label>{{ copy.height }} (mm)<input type="number" min="1" max="1000" step=".1" formControlName="height" /></label></fieldset>
+        <app-template-designer [layoutJson]="value().layoutJson" [width]="width()" [height]="height()" [disabled]="saving()" (layoutChange)="updateLayout($event)" (validityChange)="propertiesValid.set($event)" />
+        <details class="advanced"><summary>{{ copy.advanced }}</summary><p>{{ copy.advancedHint }}</p><label>{{ copy.json }}<textarea rows="10" formControlName="layoutJson" spellcheck="false" [readOnly]="saving()"></textarea></label></details>
+        @if (validationError()) { <p class="error" role="alert">{{ validationError() }}</p> }
+      }
+    </div>
+    <footer>
+      @if (serverError() && template() && !loading()) { <p class="error save-error" role="alert">{{ serverError() }}</p> }
+      @if (discardPrompt()) { <div class="discard" role="alert"><strong>{{ copy.dirtyTitle }}</strong><button type="button" (click)="discardPrompt.set(false)">{{ copy.keepEditing }}</button><button type="button" class="danger" (click)="discard()">{{ copy.discard }}</button></div> }
+      @else { <p>{{ copy.versionHint }}</p><button type="button" (click)="close()" [disabled]="saving()">{{ copy.cancel }}</button><button class="primary" type="submit" [disabled]="saving() || loading() || !template() || form.invalid || !!validationError() || !propertiesValid()">{{ saving() ? copy.saving : copy.save }}</button> }
+    </footer>
+  </form>
+</dialog>

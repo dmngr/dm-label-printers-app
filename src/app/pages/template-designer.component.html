@@ -1,0 +1,85 @@
+<div class="tools" role="toolbar" [attr.aria-label]="copy.add">
+  @for (kind of kinds; track kind.type) { <button type="button" (click)="add(kind.type)" [disabled]="disabled() || !doc() || elements().length >= 128"><span aria-hidden="true">{{ kind.icon }}</span>{{ kind.label }}</button> }
+  <button type="button" (click)="add('text', true)" [disabled]="disabled() || !doc() || inputs().length >= 64 || elements().length >= 128">＋ {{ copy.variable }}</button>
+  <span class="tool-space"></span>
+  <button type="button" (click)="undo()" [disabled]="disabled() || !past().length" [attr.aria-label]="copy.undo" [title]="copy.undo">↶</button>
+  <button type="button" (click)="redo()" [disabled]="disabled() || !future().length" [attr.aria-label]="copy.redo" [title]="copy.redo">↷</button>
+</div>
+@if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+<div class="workspace">
+  <section class="canvas-column">
+    <div class="canvas-heading"><strong>{{ copy.preview }}</strong><label>{{ copy.rotation }}<select [value]="angle()" (change)="rotate($event)" [disabled]="disabled()"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label></div>
+    <div class="mat">
+      <div class="paper" [style.aspect-ratio]="width() + ' / ' + height()" [style.--label-ratio]="width() / height()">
+        <app-template-preview [layoutJson]="currentJson()" [width]="width()" [height]="height()" [values]="values()" />
+        <svg #hitSurface class="hit-surface" [attr.viewBox]="'0 0 ' + width() + ' ' + height()" (pointermove)="move($event)" (pointerup)="end($event)" (pointercancel)="end($event, true)" (lostpointercapture)="end($event)" [attr.aria-label]="copy.elements">
+          <g [attr.transform]="transform()">
+            @for (element of elements(); track element.index) {
+              @if (element.type) {
+                <rect class="hit" [class.selected]="selectedIndex() === element.index" [attr.x]="element.x" [attr.y]="element.y - (element.height === 0 ? .5 : 0)" [attr.width]="element.width || 1" [attr.height]="element.height || 1" [attr.stroke-width]=".3" (pointerdown)="begin($event, element.index)" (focus)="select(element.index)" (click)="select(element.index)" (keydown)="key($event, element.index)" tabindex="0" role="button" [attr.aria-label]="label(element.type) + ' ' + (element.index + 1)" />
+              }
+            }
+            @if (selected(); as element) { @if (element.type) { <rect class="resize" [attr.x]="element.x + element.width - 1" [attr.y]="element.y + element.height - 1" width="2" height="2" rx=".3" (pointerdown)="begin($event, element.index, true)" /> } }
+          </g>
+        </svg>
+      </div>
+      @if (!elements().length) { <p class="empty">{{ copy.empty }}</p> }
+    </div>
+    <p class="hint">{{ copy.dragHint }}</p>
+    <p class="hint">{{ copy.previewHint }}</p>
+    @if (formatWarning()) { <p class="warning">{{ copy.formatWarning }}</p> }
+    @if (outside()) { <p class="warning">{{ copy.outside }}</p> }
+    <div class="layers" [attr.aria-label]="copy.elements">
+      @for (element of elements(); track element.index) { <button type="button" [class.active]="selectedIndex() === element.index" (click)="select(element.index)" [disabled]="disabled()"><span>{{ element.index + 1 }}</span>{{ label(element.type) }}<small>{{ element.text || element.field }}</small></button> }
+    </div>
+    @if (inputs().length) { <details class="samples"><summary>{{ copy.sampleValues }}</summary><p class="hint">{{ copy.samplesHint }}</p><div class="sample-grid">@for (input of inputs(); track input.key) { <label>{{ input.label || input.key }}<input [type]="input.type === 'date' ? 'date' : 'text'" [value]="values()[input.key] || ''" (input)="sample(input.key, $event)" maxlength="4000" /></label> }</div></details> }
+  </section>
+  <aside>
+    <div class="tabs"><button type="button" [class.active]="tab() === 'properties'" (click)="tab.set('properties')">{{ copy.properties }}</button><button type="button" [class.active]="tab() === 'inputs'" (click)="tab.set('inputs')">{{ copy.inputs }} <small>{{ inputs().length }}</small></button></div>
+    @if (tab() === 'properties') {
+      @if (selected(); as element) {
+        <div class="selection"><strong>{{ label(element.type) }}</strong><div class="element-actions"><button type="button" (click)="layer(-1)" [disabled]="disabled() || element.index === 0" [title]="copy.backward" [attr.aria-label]="copy.backward">↓</button><button type="button" (click)="layer(1)" [disabled]="disabled() || element.index === elements().length - 1" [title]="copy.forward" [attr.aria-label]="copy.forward">↑</button><button type="button" (click)="duplicate()" [disabled]="disabled() || elements().length >= 128" [title]="copy.duplicate" [attr.aria-label]="copy.duplicate">⧉</button><button type="button" (click)="remove()" [disabled]="disabled()" [title]="copy.remove" [attr.aria-label]="copy.remove">×</button></div></div>
+        @if (!element.type) { <p class="hint">{{ copy.unsupportedHint }}</p> }
+        @else {
+          <div [formGroup]="propertyForm"><fieldset [disabled]="disabled()">
+            <div class="pair"><label>{{ copy.x }} (mm)<input type="number" step=".1" formControlName="x" /></label><label>{{ copy.y }} (mm)<input type="number" step=".1" formControlName="y" /></label></div>
+            <div class="pair"><label>{{ copy.width }} (mm)<input type="number" min="0" step=".1" formControlName="width" /></label><label>{{ copy.height }} (mm)<input type="number" min="0" step=".1" formControlName="height" /></label></div>
+            @if (element.type === 'text' || element.type === 'barcode' || element.type === 'qrcode') {
+              <label>{{ copy.content }}<select [value]="source()" (change)="changeSource($event)"><option value="text">{{ copy.staticText }}</option><option value="field">{{ copy.inputValue }}</option></select></label>
+              @if (source() === 'text') { <label>{{ copy.value }}<textarea rows="2" formControlName="text" maxlength="4000"></textarea></label> }
+              @else {
+                <label>{{ copy.chooseField }}<select formControlName="field"><option [value]="element.field">{{ element.field }}</option>@for (input of inputs(); track input.key) { @if (input.key !== element.field) { <option [value]="input.key">{{ input.label || input.key }}</option> } }<optgroup [label]="copy.automatic"><option value="date">{{ copy.currentDate }}</option><option value="time">{{ copy.currentTime }}</option><option value="quantity">{{ copy.quantity }}</option></optgroup></select></label>
+                <button type="button" class="link" (click)="addField()" [disabled]="inputs().length >= 64">{{ copy.addField }}</button>
+              }
+              <details><summary>{{ copy.format }}</summary><div class="pair"><label>{{ copy.prefix }}<input formControlName="prefix" maxlength="200" /></label><label>{{ copy.suffix }}<input formControlName="suffix" maxlength="200" /></label></div><label>{{ copy.format }}<input formControlName="format" /></label></details>
+            }
+            @if (element.type === 'text') {
+              <div class="pair"><label>{{ copy.font }}<select formControlName="fontFamily"><option [value]="element.fontFamily">{{ element.fontFamily }}</option><option value="Arial">Arial</option><option value="Segoe UI">Segoe UI</option><option value="Courier New">Courier New</option></select></label><label>{{ copy.fontSize }}<input type="number" min="4" max="72" step=".5" formControlName="fontSize" /></label></div>
+              <label>{{ copy.align }}<select formControlName="align"><option value="left">{{ copy.left }}</option><option value="center">{{ copy.center }}</option><option value="right">{{ copy.right }}</option></select></label>
+              <div class="pair"><label class="check"><input type="checkbox" formControlName="bold" />{{ copy.bold }}</label><label class="check"><input type="checkbox" formControlName="wrap" />{{ copy.wrap }}</label></div>
+            }
+            @if (element.type === 'barcode') { <label class="check"><input type="checkbox" formControlName="humanReadable" />{{ copy.humanReadable }}</label> }
+            @if (element.type === 'box' || element.type === 'ellipse' || element.type === 'line') {
+              <div class="pair"><label>{{ copy.thickness }} (mm)<input type="number" min="0" max="20" step=".1" formControlName="borderWidth" /></label>@if (element.type === 'box') { <label>{{ copy.radius }} (mm)<input type="number" min="0" max="1000" step=".5" formControlName="cornerRadius" /></label> }</div>
+            }
+            <div class="pair"><label>{{ copy.foreground }}<select formControlName="foregroundColor"><option [value]="element.foregroundColor">{{ element.foregroundColor }}</option><option value="black">#000000</option><option value="white">#FFFFFF</option></select></label><label>{{ copy.background }}<select formControlName="backgroundColor"><option [value]="element.backgroundColor">{{ element.backgroundColor === 'transparent' ? copy.transparent : element.backgroundColor }}</option><option value="transparent">{{ copy.transparent }}</option><option value="white">#FFFFFF</option><option value="black">#000000</option></select></label></div>
+          </fieldset></div>
+        }
+      } @else { <p class="hint">{{ copy.selectHint }}</p> }
+    } @else {
+      <p class="hint">{{ copy.inputHint }}</p>
+      @for (input of inputs(); track $index; let i = $index) {
+        <section class="input-card"><div class="input-title"><button class="input-toggle" type="button" (click)="inputIndex.set(inputIndex() === i ? -1 : i)" [attr.aria-expanded]="inputIndex() === i" [attr.aria-controls]="'designer-input-' + i">{{ input.label || input.key }} <span aria-hidden="true">{{ inputIndex() === i ? '−' : '+' }}</span></button><button type="button" (click)="removeField(i)" [disabled]="disabled()" [attr.aria-label]="copy.removeField" [title]="copy.removeField">×</button></div>
+          @if (inputIndex() === i) { <div [id]="'designer-input-' + i">
+          <label>{{ copy.inputLabel }}<input [value]="input.label" (change)="changeInput(i, 'label', $event)" maxlength="200" [disabled]="disabled()" /></label>
+          <label>{{ copy.inputKey }}<input [value]="input.key" (change)="changeInput(i, 'key', $event)" maxlength="100" [disabled]="disabled()" /></label>
+          <label>{{ copy.inputType }}<select [value]="input.type" (change)="changeInput(i, 'type', $event)" [disabled]="disabled()"><option value="text">{{ copy.text }}</option><option value="number">{{ copy.number }}</option><option value="date">{{ copy.date }}</option></select></label>
+          <label>{{ copy.inputDefault }}<input [type]="input.type === 'date' ? 'date' : 'text'" [value]="input.defaultValue || ''" (change)="changeInput(i, 'defaultValue', $event)" maxlength="4000" [disabled]="disabled()" /></label>
+          <label class="check"><input type="checkbox" [checked]="input.required" (change)="changeInput(i, 'required', $event)" [disabled]="disabled()" />{{ copy.inputRequired }}</label>
+          </div> }
+        </section>
+      } @empty { <p class="hint">{{ copy.noInputs }}</p> }
+      <button type="button" class="add-field" (click)="addField()" [disabled]="disabled() || !doc() || inputs().length >= 64">{{ copy.addField }}</button>
+    }
+  </aside>
+</div>
