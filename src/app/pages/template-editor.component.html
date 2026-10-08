@@ -1,6 +1,6 @@
 <dialog #dialog (cancel)="close($event)" aria-labelledby="template-editor-title">
   <form [formGroup]="form" (ngSubmit)="submit()">
-    <header><div><span>LABEL NINJA · {{ expectedVersion() ? 'v' + (expectedVersion() + 1) : 'v1' }}</span><h2 id="template-editor-title">{{ expectedVersion() ? copy.editTemplate : copy.newTemplate }}</h2></div><button class="close" type="button" (click)="close()" [disabled]="saving()" [attr.aria-label]="copy.close">×</button></header>
+    <header><div><span>LABEL NINJA · {{ expectedVersion() ? 'v' + expectedVersion() + ' → v' + (expectedVersion() + 1) : 'v1' }}</span><h2 id="template-editor-title">{{ expectedVersion() ? copy.editTemplate : copy.newTemplate }}</h2></div><button class="close" type="button" (click)="close()" [disabled]="saving()" [attr.aria-label]="copy.close">×</button></header>
     <div class="body">
       @if (loading()) { <p class="loading" role="status">{{ copy.loading }}</p> }
       @if (serverError() && (!template() || loading())) { <p class="error" role="alert">{{ serverError() }}</p> }
