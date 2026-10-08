@@ -29,7 +29,7 @@ export interface DeviceDetail extends DeviceListItem {
 }
 export interface GroupHierarchy { groupId: string; stores: { storeCode: string; installations: DeviceDetail[] }[]; }
 export interface LibraryTemplate { id: string; version: number; name: string; width: number; height: number; layoutJson: string; updatedAtUtc: string; }
-export type TemplateHead = Omit<LibraryTemplate, 'layoutJson'>;
+export type TemplateHead = Omit<LibraryTemplate, 'layoutJson'> & {archived?: boolean; archiveRevision?: number};
 export interface AssignmentEntry { templateId: string; version: number; printerName?: string; }
 export interface TemplateAssignment { revision: number; inherit: boolean; entries: AssignmentEntry[]; }
 
@@ -107,8 +107,12 @@ export class CustomerApiService {
     return this.http.get<{ groups: GroupHierarchy[] }>(`${API_BASE}/api/v1/me/groups`);
   }
 
-  listLibrary(group: string): Observable<{ items: TemplateHead[] }> {
-    return this.http.get<{ items: TemplateHead[] }>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates`);
+  listLibrary(group: string, includeArchived = false): Observable<{ items: TemplateHead[] }> {
+    return this.http.get<{ items: TemplateHead[] }>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates`, { params: { includeArchived } });
+  }
+
+  setTemplateArchived(group: string, head: TemplateHead): Observable<TemplateHead> {
+    return this.http.post<TemplateHead>(`${API_BASE}/api/v1/me/groups/${encodeURIComponent(group)}/templates/${encodeURIComponent(head.id)}/archive`, { expectedVersion: head.version, expectedArchiveRevision: head.archiveRevision ?? 0, archived: !head.archived });
   }
 
   getLibraryTemplate(group: string, id: string, version?: number): Observable<LibraryTemplate> {
