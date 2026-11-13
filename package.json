@@ -20,6 +20,10 @@
     "deploy:prod": "npm run build:prod && node scripts/deploy-prod.mjs",
     "audit:all": "npm audit --audit-level=moderate"
   },
+  "overrides": {
+    "minimatch@>=7 <11.0.1": "11.0.1",
+    "glob@>=9 <=14.0.1": "14.0.3"
+  },
   "dependencies": {
     "@angular/animations": "21.2.25",
     "@angular/common": "21.2.25",
@@ -36,9 +40,9 @@
     "zone.js": "~0.15.1"
   },
   "devDependencies": {
-    "@angular/cli": "21.2.26",
+    "@angular/build": "21.2.30",
+    "@angular/cli": "21.2.30",
     "@angular/compiler-cli": "21.2.25",
-    "typescript": "~5.9.3",
-    "@angular/build": "21.2.26"
+    "typescript": "~5.9.3"
   }
 }
