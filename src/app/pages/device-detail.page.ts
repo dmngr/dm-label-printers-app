@@ -10,6 +10,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EMPTY, Subject, distinctUntilChanged, forkJoin, fromEvent, map, startWith, switchMap, takeUntil } from 'rxjs';
 import { TemplatePrintPanelComponent } from './template-print-panel.component';
 import { LibraryApplicationStatusComponent } from './library-application-status.component';
+import { PrintJobImagesComponent } from './print-job-images.component';
 import { parseUtcTimestamp } from '../shared/utc-timestamp';
 import { refreshVisiblePage } from '../shared/page-refresh';
 import { refreshText } from '../shared/refresh-text';
@@ -43,7 +44,7 @@ interface TemplateDraft {
 @Component({
   selector: 'app-device-detail',
   standalone: true,
-  imports: [RouterLink, FormsModule, TemplatePrintPanelComponent, LibraryApplicationStatusComponent],
+  imports: [RouterLink, FormsModule, TemplatePrintPanelComponent, LibraryApplicationStatusComponent, PrintJobImagesComponent],
   template: `
     <div class="page">
       <a routerLink="/devices" class="back">‹ Εγκαταστάσεις</a>
@@ -217,6 +218,7 @@ interface TemplateDraft {
                         <span class="error-inline small">· {{ j.errorMessage }}</span>
                       }
                     </div>
+                    <app-print-job-images [deviceCode]="d.deviceCode" [jobId]="j.id" />
                   </div>
                 </div>
               }

@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { pollCommand } from '../shared/command-status';
 import type { LibraryApplicationStatus, LibraryRetryResult } from '../shared/library-application';
+import type { PrintImagesResponse } from '../shared/print-images';
 
 const API_BASE = 'https://qqk5lvoos7ljgftlleth5ize2i0nwkxe.lambda-url.eu-west-1.on.aws';
 
@@ -173,6 +174,16 @@ export class CustomerApiService {
     return this.http.get<PrintJobsResponse>(
       `${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/jobs?limit=${limit}`,
     );
+  }
+
+  listPrintImages(deviceCode: string, jobId: number, cursor?: string): Observable<PrintImagesResponse> {
+    return this.http.get<PrintImagesResponse>(`${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/jobs/${jobId}/images`,
+      { params: cursor ? { cursor } : {} });
+  }
+
+  getPrintImage(deviceCode: string, jobId: number, artifactId: string): Observable<Blob> {
+    return this.http.get(`${API_BASE}/api/v1/me/devices/${encodeURIComponent(deviceCode)}/jobs/${jobId}/images/${encodeURIComponent(artifactId)}`,
+      { responseType: 'blob' });
   }
 
   printLabel(
